@@ -39,7 +39,11 @@ def send_req(path: str, payload: dict):
     url = f"{TRT_API_BASE}{path}"
     headers = {"Content-Type": "application/json"}
     response = requests.post(url, headers=headers, json=payload)
-    return response.json()
+    if response.status_code == 200:
+        return response.json()
+    else:
+        print(f"Error: {response.status_code} - {response.text}")
+        return None
 
 
 def send_stream(path: str, payload: dict) -> requests.Response | None:
@@ -54,15 +58,31 @@ def send_stream(path: str, payload: dict) -> requests.Response | None:
         return None
 
 
+def joke_msg():
+    return messages(
+        "Ignore the text below.\n"
+        + gen_prompt(PROMPT_SIZE)
+        + "\n\n"
+        + "Now, please tell me a long joke."
+    )
+
+
+def llg_data():
+    return {
+        "controller": "llguidance",
+        "controller_arg": {
+            "grammar": json.loads(grammar),
+        },
+        "messages": joke_msg(),
+        "max_tokens": 50,
+        "temperature": 0.8,
+    }
+
+
 def req_data():
     return {
         "model": "model",
-        "messages": messages(
-            "Ignore the text below.\n"
-            + gen_prompt(PROMPT_SIZE)
-            + "\n\n"
-            + "Now, please tell me a long joke."
-        ),
+        "messages": joke_msg(),
         ("response_format" if LLG else "ignore_me"): {
             "type": "json_schema",
             "strict": True,
@@ -123,7 +143,12 @@ def send_one(data):
 
 def send_one_stream(data: dict) -> list[Results]:
     t0 = time.monotonic()
-    response = send_stream("chat/completions", data)
+    path = "chat/completions"
+    is_run = False
+    if data.get("controller", None) == "llguidance":
+        path = "run"
+        is_run = True
+    response = send_stream(path, data)
     if not response:
         return []
     t_prev = None
@@ -145,7 +170,10 @@ def send_one_stream(data: dict) -> list[Results]:
                 res.error = json.dumps(data["error"])
                 break
 
-            idx: int = data["choices"][0]["index"]
+            if data["object"] == "initial-run":
+                continue
+
+            idx: int = data["choices"][0]["index"] if not is_run else data["forks"][0]["index"]
             res = results[idx]
 
             now = time.monotonic()
@@ -156,8 +184,13 @@ def send_one_stream(data: dict) -> list[Results]:
             t_prev = now
 
             res.usage = data["usage"]
-            res.text_chunks.append(data["choices"][0]["delta"]["content"])
-            res.logs += data["choices"][0].get("llg_logs", "")
+            if is_run:
+                res.text_chunks.append(data["forks"][0]["text"])
+                res.logs += data["forks"][0]["logs"]
+                res.error = data["forks"][0].get("error", "")
+            else:
+                res.text_chunks.append(data["choices"][0]["delta"]["content"])
+                res.logs += data["choices"][0].get("llg_logs", "")
     for res in results:
         res.finalize()
     responses.extend(results)
@@ -195,6 +228,11 @@ def one_round():
     return [avg_p50, avg_p90, avg_ttft, avg_tokens], [NUM_THREADS, NUM_REPS, LLG]
 
     # print(responses[0]["choices"][0].get("llg_logs", ""))
+
+
+grammar = r"""
+{"grammars":[{"nodes":[{"Join":{"sequence":[9],"max_tokens":null,"name":null,"capture_name":null}},{"String":{"literal":"{","max_tokens":null,"name":null,"capture_name":null}},{"String":{"literal":"\"joke\"","max_tokens":null,"name":null,"capture_name":null}},{"String":{"literal":":","max_tokens":null,"name":null,"capture_name":null}},{"Lexeme":{"rx":"\"(\\\\([\\\"\\\\\\/bfnrt]|u[a-fA-F0-9]{4})|[^\\\"\\\\\\x00-\\x1F\\x7F])*\"","contextual":null,"temperature":null,"json_string":false,"json_allowed_escapes":null,"json_raw":null,"max_tokens":null,"name":null,"capture_name":null}},{"String":{"literal":",","max_tokens":null,"name":null,"capture_name":null}},{"String":{"literal":"\"rating\"","max_tokens":null,"name":null,"capture_name":null}},{"Lexeme":{"rx":"-?(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?(?:[eE][+-]?[0-9]+)?","contextual":null,"temperature":null,"json_string":false,"json_allowed_escapes":null,"json_raw":null,"max_tokens":null,"name":null,"capture_name":null}},{"String":{"literal":"}","max_tokens":null,"name":null,"capture_name":null}},{"Join":{"sequence":[1,2,3,4,5,6,3,7,8],"max_tokens":null,"name":null,"capture_name":null}}],"greedy_lexer":false,"greedy_skip_rx":"[\\x20\\x0A\\x0D\\x09]+","contextual":null,"rx_nodes":[],"allow_initial_skip":false,"no_forcing":false,"allow_invalid_utf8":false}],"max_tokens":null,"test_trace":false}
+"""
 
 
 def main():
@@ -241,15 +279,16 @@ def main():
 
         return
 
+    #d = llg_data()
     d = req_data()
     d["n"] = 1
     d["temperature"] = 1.0
     d["max_tokens"] = 100
-    d["llg_log_level"] = "json"
     # d["stop"] = ["Xked", "d ask"]
-    if False:
+    if True:
         print(send_one(d))
     else:
+        d["llg_log_level"] = "json"
         for r in send_one_stream(d):
             # print(r.text)
             print(repr(r))

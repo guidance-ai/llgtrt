@@ -175,6 +175,7 @@ async fn mk_req_info(
     let cmpl_id = format!("{}-{}", if is_run { "run" } else { "cmpl" }, Uuid::new_v4());
 
     let llg = if let Some(grm) = llg_grammar(params)? {
+        // println!("grammar: {}", serde_json::to_string(&grm).unwrap());
         let mut llg = app_state.constraint_mgr.new_constraint(ConstraintInit {
             grammar: grm,
             is_chat,
@@ -550,16 +551,14 @@ async fn completions_stream(
 }
 
 async fn completions(mut client: ReqInfo) -> Result<Json<Value>, AppError> {
-    let mut error = None;
-
     while let Some(mut result) = client.recv.recv().await {
         log::debug!("infer response: {:?}", result.response);
         let response = &result.response;
         if let Some(err) = &response.error {
-            if error.is_none() {
-                log::error!("received error message: {}", err);
-                error = Some(err.clone());
-            }
+            let err = anyhow::anyhow!("{}", err);
+            log::error!("received error message (rest): {}", err);
+            let _ = AsyncExecutor::lock().cancel_request(client.req_id);
+            return Err(err.into());
         } else {
             client.usage.completion_tokens += response.tokens.len();
             client.usage.total_tokens += response.tokens.len();
@@ -567,6 +566,7 @@ async fn completions(mut client: ReqInfo) -> Result<Json<Value>, AppError> {
         }
 
         if client.all_forks_stopped() {
+            let _ = AsyncExecutor::lock().cancel_request(client.req_id);
             break;
         }
     }

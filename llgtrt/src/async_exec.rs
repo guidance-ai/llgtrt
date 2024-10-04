@@ -79,11 +79,12 @@ static mut GLOBAL_EXECUTOR: *const Mutex<AsyncExecutor> = ptr::null();
 
 struct PendingSeq {
     entry_idx: usize,
-    llg: Option<Box<Constraint>>,
+    llg: Box<Constraint>,
     llg_idx: usize,
     prompt_len: usize,
     entry: TlcLogitsEntry,
     stop: bool,
+    // setting this will stop the sequence with given error
     error: Option<String>,
 }
 unsafe impl Send for PendingSeq {}
@@ -98,7 +99,7 @@ impl PendingSeq {
     fn step(&mut self) -> Result<()> {
         let tokens = unsafe { self.entry.tokens() };
 
-        let llg = self.llg.as_mut().unwrap();
+        let llg = self.llg.as_mut();
 
         log::trace!("Tokens: {}", llg.tok_trie().tokens_dbg(tokens));
 
@@ -136,7 +137,7 @@ impl PendingSeq {
         let llg = std::mem::take(&mut rd.llgs[llg_idx]).unwrap();
         Self {
             entry_idx,
-            llg: Some(llg),
+            llg,
             llg_idx,
             prompt_len: rd.prompt_len,
             entry: entry.clone(),
@@ -220,12 +221,22 @@ extern "C" fn logits_processor(logits: *mut TlcLogitsEntry, num_logits: u32) {
                 }
                 Ok(()) => {
                     if ps.stop {
-                        assert!(ps.entry.out_mask_pointer.is_null());
-                        let trie = ps.llg.as_ref().unwrap().tok_trie();
-                        let only_eos = trie.singleton_token_set(trie.eos_token());
-                        ps.entry.out_mask_pointer = copy_mask(&only_eos);
+                        if !ps.llg.parser.stop_reason().is_ok() {
+                            let msg = format!(
+                                "llg stop reason: {}",
+                                ps.llg.parser.stop_reason().to_string()
+                            );
+                            log::warn!("{}", msg);
+                            ps.error = Some(msg);
+                        } else {
+                            assert!(ps.entry.out_mask_pointer.is_null());
+                            let trie = ps.llg.tok_trie();
+                            let only_eos = trie.singleton_token_set(trie.eos_token());
+                            ps.entry.out_mask_pointer = copy_mask(&only_eos);
+                        }
+                    } else {
+                        assert!(!ps.entry.out_mask_pointer.is_null());
                     }
-                    assert!(!ps.entry.out_mask_pointer.is_null());
                 }
             }
             ps
@@ -239,34 +250,34 @@ extern "C" fn logits_processor(logits: *mut TlcLogitsEntry, num_logits: u32) {
             let entry = &mut entries[ps.entry_idx];
             entry.out_mask_pointer = ps.entry.out_mask_pointer;
             entry.temperature = ps.entry.temperature;
-            if let Some(mut llg) = ps.llg {
-                if let Some(rd) = exec.req_data.get_mut(&entry.client_req_id()) {
-                    if rd.logs.is_empty() {
-                        // no copy in common case
-                        rd.logs = llg.flush_logs();
-                    } else {
-                        rd.logs.push_str(&llg.flush_logs());
-                    }
-                    if ps.error.is_some() {
-                        let _ = rd.tx.send(StepResults {
-                            response: ResponseChunk {
-                                req_id: entry.req_id(),
-                                sequence_idx: ps.llg_idx as u32,
-                                finish_reason: Some(trtllm_rs::FinishReason::Unknown),
-                                error: ps.error.clone(),
-                                is_req_final: true,
-                                tokens: vec![],
-                            },
-                            logs: rd.logs.clone(),
-                            final_llg: None,
-                        });
-                        let _ = exec.cancel_request(entry.req_id());
-                    } else {
-                        rd.llgs[ps.llg_idx] = Some(llg);
-                    }
+            let mut llg = ps.llg;
+            if let Some(rd) = exec.req_data.get_mut(&entry.client_req_id()) {
+                if rd.logs.is_empty() {
+                    // no copy in common case
+                    rd.logs = llg.flush_logs();
                 } else {
-                    log::warn!("Sequence {} went missing while computing logit mask", entry);
+                    rd.logs.push_str(&llg.flush_logs());
                 }
+                if let Some(err) = ps.error {
+                    rd.logs.push_str(&format!("\nWarning: {}\n", err));
+                    let _ = rd.tx.send(StepResults {
+                        response: ResponseChunk {
+                            req_id: entry.req_id(),
+                            sequence_idx: ps.llg_idx as u32,
+                            finish_reason: Some(trtllm_rs::FinishReason::Unknown),
+                            error: Some(err),
+                            is_req_final: true,
+                            tokens: vec![],
+                        },
+                        logs: std::mem::take(&mut rd.logs),
+                        final_llg: None,
+                    });
+                    let _ = exec.cancel_request(entry.req_id());
+                } else {
+                    rd.llgs[ps.llg_idx] = Some(llg);
+                }
+            } else {
+                log::warn!("Sequence {} went missing while computing logit mask", entry);
             }
         }
     }
