@@ -64,6 +64,6 @@ RUN rm /usr/local/cuda/lib64/libnvidia-ml.so.1
 
 FROM llgtrt_dev AS llgtrt_prod
 
-COPY --from=llgtrt_builder /workspaces/llgtrt/target/release/llguidance_tensorrtllm /usr/local/bin/llgtrt
+COPY --from=llgtrt_builder /workspaces/llgtrt/target/release/llgtrt /usr/local/bin/llgtrt
 COPY --from=llgtrt_builder /workspaces/llgtrt/TensorRT-LLM/examples /opt/TensorRT-LLM-examples
 COPY --from=llgtrt_builder /workspaces/llgtrt/scripts/launch-llgtrt.sh /usr/local/bin/launch-llgtrt.sh

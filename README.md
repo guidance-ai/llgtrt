@@ -1,4 +1,4 @@
-# llguidance_tensorrtllm
+# llgtrt (llguidance + TensorRT-LLM)
 
 This project demonstrates how to use
 [llguidance library](https://github.com/microsoft/llguidance)

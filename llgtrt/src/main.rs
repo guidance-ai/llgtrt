@@ -2,8 +2,8 @@ use std::env;
 
 use clap::Parser;
 
-use llguidance_tensorrtllm::config::Config;
-use llguidance_tensorrtllm::startup;
+use llgtrt::config::Config;
+use llgtrt::startup;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -27,7 +27,7 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    llguidance_tensorrtllm::logging::init_log(llguidance_tensorrtllm::logging::LogMode::Normal)?;
+    llgtrt::logging::init_log(llgtrt::logging::LogMode::Normal)?;
 
     log::info!(
         "logging setup: RUST_LOG={} TLLM_LOG_LEVEL={}",

@@ -9,7 +9,7 @@ set -e
 
 make -j -C ../trtllm-c/build
 cargo build --release
-LLGTRT_BIN=../target/release/llguidance_tensorrtllm \
+LLGTRT_BIN=../target/release/llgtrt \
     ../scripts/launch-llgtrt.sh \
     $ENGINE \
     --chat-config chat_config/llama3.json \

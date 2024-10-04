@@ -1249,24 +1249,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "llguidance_parser"
-version = "0.2.0"
-dependencies = [
- "anyhow",
- "cbindgen",
- "derivre",
- "instant",
- "jsonschema",
- "lazy_static",
- "rustc-hash 2.0.0",
- "serde",
- "serde_json",
- "toktrie",
- "url",
-]
-
-[[package]]
-name = "llguidance_tensorrtllm"
+name = "llgtrt"
 version = "0.2.1"
 dependencies = [
  "anyhow",
@@ -1287,6 +1270,23 @@ dependencies = [
  "toktrie_hf_tokenizers",
  "trtllm_rs",
  "uuid",
+]
+
+[[package]]
+name = "llguidance_parser"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "cbindgen",
+ "derivre",
+ "instant",
+ "jsonschema",
+ "lazy_static",
+ "rustc-hash 2.0.0",
+ "serde",
+ "serde_json",
+ "toktrie",
+ "url",
 ]
 
 [[package]]
