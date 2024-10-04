@@ -2,9 +2,10 @@ use anyhow::{ensure, Result};
 use llguidance_parser::Constraint;
 use rayon::prelude::*;
 use std::{
+    any::Any,
     collections::HashMap,
     fmt::Display,
-    panic::{self, UnwindSafe},
+    panic::{self, AssertUnwindSafe},
     ptr,
     sync::{Mutex, MutexGuard},
 };
@@ -51,7 +52,6 @@ struct ReqData {
     client_req_id: ClientReqId,
     tx: UnboundedSender<StepResults>,
     logs: String,
-    error: Option<String>,
     llgs: Vec<Option<Box<Constraint>>>,
     // trtllm will create new req_id when n>1
     // it seems to create them one by one
@@ -87,7 +87,6 @@ struct PendingSeq {
     error: Option<String>,
 }
 unsafe impl Send for PendingSeq {}
-impl UnwindSafe for PendingSeq {}
 
 fn copy_mask(src: &SimpleVob) -> *mut u32 {
     let dst = AsyncExecutor::mask_allocator().allocate();
@@ -96,7 +95,7 @@ fn copy_mask(src: &SimpleVob) -> *mut u32 {
 }
 
 impl PendingSeq {
-    fn step(mut self) -> Result<Self> {
+    fn step(&mut self) -> Result<()> {
         let tokens = unsafe { self.entry.tokens() };
 
         let llg = self.llg.as_mut().unwrap();
@@ -110,7 +109,7 @@ impl PendingSeq {
             assert!(r.backtrack == 0);
             if r.stop {
                 self.stop = true;
-                return Ok(self);
+                return Ok(());
             }
 
             assert!(r.ff_tokens.len() == 1);
@@ -121,14 +120,14 @@ impl PendingSeq {
 
         if res.is_stop() {
             self.stop = true;
-            return Ok(self);
+            return Ok(());
         }
 
         let mask = res.sample_mask.as_ref().expect("No mask");
         self.entry.out_mask_pointer = copy_mask(mask);
         self.entry.temperature = llg.temperature;
 
-        Ok(self)
+        Ok(())
     }
 }
 
@@ -145,6 +144,18 @@ impl PendingSeq {
             error: None,
         }
     }
+}
+
+fn mk_panic_error(info: &Box<dyn Any + Send>) -> String {
+    let msg = match info.downcast_ref::<&'static str>() {
+        Some(s) => *s,
+        None => match info.downcast_ref::<String>() {
+            Some(s) => &s[..],
+            None => "non-string panic!()",
+        },
+    };
+
+    format!("panic: {msg}")
 }
 
 extern "C" fn logits_processor(logits: *mut TlcLogitsEntry, num_logits: u32) {
@@ -195,29 +206,19 @@ extern "C" fn logits_processor(logits: *mut TlcLogitsEntry, num_logits: u32) {
 
     let pending_seqs = pending_seqs
         .into_par_iter()
-        .map(|ps| {
-            let mut backup = PendingSeq {
-                entry_idx: ps.entry_idx,
-                llg: None,
-                llg_idx: ps.llg_idx,
-                prompt_len: ps.prompt_len,
-                entry: ps.entry.clone(),
-                stop: false,
-                error: None,
-            };
-            let r = match panic::catch_unwind(move || ps.step()) {
-                Err(e) => Err(format!("Panic: {:?}", e)),
+        .map(|mut ps| {
+            let r = match panic::catch_unwind(AssertUnwindSafe(|| ps.step())) {
+                Err(e) => Err(mk_panic_error(&e)),
                 Ok(Err(e)) => Err(format!("{:?}", e)),
                 Ok(Ok(ps)) => Ok(ps),
             };
             match r {
                 Err(msg) => {
-                    log::error!("Error processing sequence: {} {}", backup.entry, msg);
-                    backup.stop = true;
-                    backup.error = Some(msg);
-                    backup
+                    log::error!("llg error: {} {}", ps.entry, msg);
+                    ps.stop = true;
+                    ps.error = Some(msg);
                 }
-                Ok(mut ps) => {
+                Ok(()) => {
                     if ps.stop {
                         assert!(ps.entry.out_mask_pointer.is_null());
                         let trie = ps.llg.as_ref().unwrap().tok_trie();
@@ -225,9 +226,9 @@ extern "C" fn logits_processor(logits: *mut TlcLogitsEntry, num_logits: u32) {
                         ps.entry.out_mask_pointer = copy_mask(&only_eos);
                     }
                     assert!(!ps.entry.out_mask_pointer.is_null());
-                    ps
                 }
             }
+            ps
         })
         .collect::<Vec<_>>();
 
@@ -240,16 +241,29 @@ extern "C" fn logits_processor(logits: *mut TlcLogitsEntry, num_logits: u32) {
             entry.temperature = ps.entry.temperature;
             if let Some(mut llg) = ps.llg {
                 if let Some(rd) = exec.req_data.get_mut(&entry.client_req_id()) {
-                    if rd.error.is_none() && ps.error.is_some() {
-                        rd.error = ps.error;
-                    }
                     if rd.logs.is_empty() {
                         // no copy in common case
                         rd.logs = llg.flush_logs();
                     } else {
                         rd.logs.push_str(&llg.flush_logs());
                     }
-                    rd.llgs[ps.llg_idx] = Some(llg);
+                    if ps.error.is_some() {
+                        let _ = rd.tx.send(StepResults {
+                            response: ResponseChunk {
+                                req_id: entry.req_id(),
+                                sequence_idx: ps.llg_idx as u32,
+                                finish_reason: Some(trtllm_rs::FinishReason::Unknown),
+                                error: ps.error.clone(),
+                                is_req_final: true,
+                                tokens: vec![],
+                            },
+                            logs: rd.logs.clone(),
+                            final_llg: None,
+                        });
+                        let _ = exec.cancel_request(entry.req_id());
+                    } else {
+                        rd.llgs[ps.llg_idx] = Some(llg);
+                    }
                 } else {
                     log::warn!("Sequence {} went missing while computing logit mask", entry);
                 }
@@ -338,11 +352,8 @@ impl AsyncExecutor {
                         logs: std::mem::take(&mut rd.logs),
                         final_llg: None,
                     };
-                    if r.response.finish_reason.is_some() && rd.llgs.len() > 0 {
+                    if rd.llgs.len() > 0 && r.response.finish_reason.is_some() {
                         r.final_llg = std::mem::take(&mut rd.llgs[idx]);
-                    }
-                    if r.response.error.is_none() && rd.error.is_some() {
-                        r.response.error = rd.error.clone();
                     }
                     if rd.tx.send(r).is_err() {
                         log::warn!("connection dropped; req={}", req_id);
@@ -384,7 +395,6 @@ impl AsyncExecutor {
                 llgs: llgs.into_iter().map(Some).collect(),
                 llg_infos: vec![],
                 prompt_len,
-                error: None,
                 logs: String::new(),
             },
         );

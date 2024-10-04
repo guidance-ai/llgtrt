@@ -89,6 +89,7 @@ class Results:
         self.usage = {}
         self.text_chunks = []
         self.logs = ""
+        self.error = ""
 
     def finalize(self):
         self.prompt_tokens = self.usage.get("prompt_tokens", 0)
@@ -140,7 +141,10 @@ def send_one_stream(data: dict) -> list[Results]:
             if line == b"[DONE]":
                 break
             data = json.loads(line)
-            # print(data)
+            if data.get("error", None):
+                res.error = json.dumps(data["error"])
+                break
+
             idx: int = data["choices"][0]["index"]
             res = results[idx]
 
@@ -238,7 +242,7 @@ def main():
         return
 
     d = req_data()
-    d["n"] = 4
+    d["n"] = 1
     d["temperature"] = 1.0
     d["max_tokens"] = 100
     d["llg_log_level"] = "json"
@@ -247,9 +251,10 @@ def main():
         print(send_one(d))
     else:
         for r in send_one_stream(d):
-            print(r.text)
+            # print(r.text)
             print(repr(r))
-        # print(r.logs)
+            print(r.logs)
+            print(r.error)
 
 
 main()

@@ -369,7 +369,8 @@ impl ReqInfo {
                         result.response.error = Some(format!("{e}"));
                     }
                     let msg = format!("error taking final logs: {e}");
-                    log::warn!("{}", msg);
+                    log::debug!("{}", msg);
+                    fork.logs.push_str("\nWarning: ");
                     fork.logs.push_str(&msg);
                 }
             }

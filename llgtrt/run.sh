@@ -9,6 +9,7 @@ set -e
 
 make -j -C ../trtllm-c/build
 cargo build --release
+RUST_BACKTRACE=1 \
 LLGTRT_BIN=../target/release/llgtrt \
     ../scripts/launch-llgtrt.sh \
     $ENGINE \
