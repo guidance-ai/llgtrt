@@ -1,0 +1,5 @@
+build
+tmp
+.vscode/settings.json
+target
+model.cache

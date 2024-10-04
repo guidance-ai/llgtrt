@@ -1,0 +1,22 @@
+[workspace]
+members = [
+    "trtllm_rs",
+    "llgtrt",
+    "llguidance/parser",
+    "toktrie/core",
+    "toktrie/hf_tokenizers",
+    "derivre",
+]
+exclude = [
+    "llguidance/rust",
+]
+resolver = "2"
+
+[profile.release]
+# debug = 1
+
+[patch.'https://github.com/microsoft/toktrie']
+toktrie = { path = "toktrie/core" }
+
+[patch.'https://github.com/microsoft/derivre']
+derivre = { path = "derivre" }

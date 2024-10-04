@@ -1,0 +1,38 @@
+// For format details, see https://aka.ms/devcontainer.json
+{
+	"name": "TensorRT-LLM", 
+	// "initializeCommand": "if [ ! -f TensorRT-LLM/README.md ] ; then git submodule update --init ; fi",
+	"build": {
+		"dockerfile": "../docker/Dockerfile",
+		"target": "llgtrt_dev",
+		"context": ".."
+	},
+	"runArgs": [
+		"--ipc=host",
+		"--runtime=nvidia",
+		"--privileged",
+		"--gpus",
+		"all",
+		"--shm-size=8g"
+	],
+	"remoteUser": "root",
+	"containerUser": "root",
+	"mounts": [
+		"source=profile,target=/root,type=volume",
+		"target=/root/.vscode-server,type=volume"
+	],
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"ms-python.python",
+				"ms-python.black-formatter",
+				"1YiB.rust-bundle",
+				"dtsvet.vscode-wasm",
+				"ms-vscode.cpptools",
+				"esbenp.prettier-vscode",
+				"streetsidesoftware.code-spell-checker",
+				"GitHub.copilot"
+			]
+		}
+	}
+}

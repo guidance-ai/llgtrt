@@ -1,0 +1,329 @@
+use super::api_ext::LlgLogLevel;
+use llguidance_parser::api::TopLevelGrammar;
+use serde::{Deserialize, Deserializer, Serialize};
+use std::collections::HashMap;
+
+// https://platform.openai.com/docs/api-reference/chat/create
+#[derive(Deserialize, Debug)]
+pub struct ChatCompletionCreateParams {
+    /// A list of messages comprising the conversation so far.
+    pub messages: Vec<ChatCompletionMessageParams>,
+
+    #[serde(flatten)]
+    pub params: CommonCreateParams,
+    // Not supported yet:
+    // tools
+    // tool_choices
+}
+
+// https://platform.openai.com/docs/api-reference/completions/create
+#[derive(Deserialize, Debug)]
+pub struct CompletionCreateParams {
+    /// The prompt(s) to generate completions for, encoded as a string, array of strings, array of
+    /// tokens, or array of token arrays.
+    #[serde(deserialize_with = "string_or_vec")]
+    pub prompt: Vec<String>,
+
+    /// The suffix that comes after a completion of inserted text.
+    pub suffix: Option<String>,
+
+    /// Generates best_of completions server-side and returns the "best" (the one with the highest
+    /// log probability per token). Results cannot be streamed.
+    #[serde(default = "default_best_of")]
+    pub best_of: usize,
+
+    /// Echo back the prompt in addition to the completion
+    #[serde(default)]
+    pub echo: bool,
+
+    /// Include the log probabilities on the logprobs most likely tokens, as well the chosen tokens.
+    pub logprobs: Option<usize>,
+
+    #[serde(flatten)]
+    pub params: CommonCreateParams,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct CommonCreateParams {
+    /// ID of the model to use.
+    pub model: String,
+    /// Number between -2.0 and 2.0. Positive values penalize new tokens based on their existing
+    /// frequency in the text so far, decreasing the model's likelihood to repeat the same line
+    /// verbatim.
+    #[serde(default)]
+    pub frequency_penalty: f32,
+    /// Modify the likelihood of specified tokens appearing in the completion.
+    pub logit_bias: Option<HashMap<String, f32>>,
+    /// The maximum number of tokens to generate in the completion.
+    pub max_tokens: Option<usize>,
+    /// An upper bound for the number of tokens that can be generated for a completion, including visible output tokens and reasoning tokens.
+    pub max_completion_tokens: Option<usize>,
+    /// How many completions to generate for each prompt.
+    #[serde(default = "default_n")]
+    pub n: usize,
+    /// Number between -2.0 and 2.0. Positive values penalize new tokens based on whether they
+    /// appear in the text so far, increasing the model's likelihood to talk about new topics.
+    #[serde(default)]
+    pub presence_penalty: f32,
+    /// If specified, our system will make a best effort to sample deterministically, such that
+    /// repeated requests with the same seed and parameters should return the same result.
+    pub seed: Option<u64>,
+    /// Up to 4 sequences where the API will stop generating further tokens. The returned text will
+    /// not contain the stop sequence.
+    pub stop: Option<Vec<String>>,
+    /// Whether to stream back partial progress.
+    #[serde(default)]
+    pub stream: bool,
+    /// What sampling temperature to use, between 0 and 2. Higher values like 0.8 will make the
+    /// output more random, while lower values like 0.2 will make it more focused and deterministic.
+    #[serde(default = "default_temperature")]
+    pub temperature: f32,
+    /// An alternative to sampling with temperature, called nucleus sampling, where the model
+    /// considers the results of the tokens with top_p probability mass. So 0.1 means only the
+    /// tokens comprising the top 10% probability mass are considered.
+    #[serde(default = "default_top_p")]
+    pub top_p: f32,
+    /// A unique identifier representing your end-user, which can help OpenAI to monitor and detect
+    /// abuse.
+    #[allow(dead_code)]
+    pub user: Option<String>,
+
+    /// An object specifying the format that the model must output.
+    /// Setting to { "type": "json_object" } enables JSON mode, which guarantees the message the
+    /// model generates is valid JSON.
+    pub response_format: Option<ResponseFormat>,
+
+    #[serde(default)]
+    pub llg_log_level: LlgLogLevel,
+}
+
+#[derive(Serialize, Debug)]
+pub struct Completion {
+    /// A unique identifier for the completion.
+    pub id: String,
+    /// The object type, which is always "text_completion"
+    pub object: String,
+    /// The Unix timestamp (in seconds) of when the completion was created.
+    pub created: u64,
+    /// The model used for completion.
+    pub model: String,
+    /// The list of completion choices the model generated for the input prompt.
+    pub choices: Vec<CompletionChoice>,
+    /// Usage statistics for the completion request.
+    pub usage: Usage,
+}
+
+#[derive(Serialize, Debug)]
+pub struct CompletionChoice {
+    pub text: String,
+    pub index: usize,
+    pub logprobs: Option<()>,
+    pub finish_reason: Option<FinishReason>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub llg_logs: Option<String>,
+}
+
+#[derive(Serialize, Debug, Default, Clone)]
+pub struct Usage {
+    /// Number of tokens in the prompt.
+    pub prompt_tokens: usize,
+    /// Number of tokens in the generated completion.
+    pub completion_tokens: usize,
+    /// Total number of tokens used in the request (prompt + completion).
+    pub total_tokens: usize,
+}
+
+fn default_best_of() -> usize {
+    1
+}
+
+fn default_n() -> usize {
+    1
+}
+
+fn default_temperature() -> f32 {
+    1.0
+}
+
+fn default_top_p() -> f32 {
+    1.0
+}
+
+#[derive(Deserialize, Debug, Clone)]
+#[serde(tag = "role", rename_all = "lowercase")]
+pub enum ChatCompletionMessageParams {
+    System {
+        content: String,
+        name: Option<String>,
+    },
+    User {
+        content: String,
+        name: Option<String>,
+    },
+    Assistant {
+        content: String,
+        name: Option<String>,
+        tool_calls: Option<Vec<serde_json::Value>>,
+    },
+    Tool {
+        content: String,
+        tool_call_id: String,
+    },
+}
+
+#[derive(Deserialize, Debug, Clone)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ResponseFormat {
+    Text,
+    JsonObject,
+    JsonSchema {
+        /// The name of the response format. Must be a-z, A-Z, 0-9, or contain underscores and dashes, with a maximum length of 64.
+        name: Option<String>,
+        /// A description of what the response format is for, used by the model to determine how to respond in the format.
+        #[allow(dead_code)]
+        description: Option<String>,
+        /// The schema for the response format, described as a JSON Schema object.
+        schema: Option<serde_json::Value>,
+        /// Whether to enable strict schema adherence when generating the output. If set to true, the model will always follow the exact schema defined in the schema field. Only a subset of JSON Schema is supported when strict is true.
+        #[serde(default)]
+        strict: bool,
+    },
+    Llguidance {
+        grammar: TopLevelGrammar,
+    },
+}
+
+#[derive(Serialize, Debug)]
+pub struct ChatCompletion {
+    /// A unique identifier for the completion.
+    pub id: String,
+    /// The object type, which is always "chat.completion"
+    pub object: String,
+    /// The Unix timestamp (in seconds) of when the completion was created.
+    pub created: u64,
+    /// The model used for completion.
+    pub model: String,
+    /// This fingerprint represents the backend configuration that the model runs with.
+    pub system_fingerprint: Option<String>,
+    /// The list of completion choices the model generated for the input prompt.
+    pub choices: Vec<ChatCompletionChoice>,
+    /// Usage statistics for the completion request.
+    pub usage: Usage,
+}
+
+#[derive(Serialize, Debug)]
+pub struct ChatCompletionChoice {
+    pub index: usize,
+    pub message: ChatCompletionMessage,
+    pub finish_reason: Option<FinishReason>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub llg_logs: Option<String>,
+}
+
+#[derive(Serialize, Debug, Clone)]
+pub struct ChatCompletionMessage {
+    /// The role of the author of this message.
+    pub role: Role,
+    /// The contents of the chunk message.
+    pub content: Option<String>,
+    // Not supported yet:
+    // tool_calls
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum FinishReason {
+    /// The model hit a natural stop point or a provided stop sequence.
+    Stop,
+    /// The maximum number of tokens specified in the request was reached.
+    Length,
+    // Content was omitted due to a flag from our content filters.
+    // ContentFilter,
+    // The model called a tool
+    // ToolCalls,
+}
+
+#[derive(Serialize, Debug)]
+pub struct ChatCompletionChunk {
+    /// A unique identifier for the chat completion. Each chunk has the same ID.
+    pub id: String,
+    /// The object type, which is always chat.completion.chunk.
+    pub object: String,
+    /// The Unix timestamp (in seconds) of when the chat completion was created. Each chunk has
+    /// the same timestamp.
+    pub created: u64,
+    /// The model used for completion.
+    pub model: String,
+    /// This fingerprint represents the backend configuration that the model runs with.
+    pub system_fingerprint: Option<String>,
+    /// A list of chat completion choices. Can be more than one if n is greater than 1.
+    pub choices: Vec<ChatCompletionChunkChoice>,
+    /// Usage statistics for the completion request.
+    pub usage: Usage,
+}
+
+#[derive(Serialize, Debug)]
+pub struct ChatCompletionChunkChoice {
+    pub index: usize,
+    pub delta: ChatCompletionChunkDelta,
+    pub finish_reason: Option<FinishReason>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub llg_logs: Option<String>,
+}
+
+#[derive(Serialize, Debug)]
+pub struct ChatCompletionChunkDelta {
+    /// The role of the author of this message.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub role: Option<Role>,
+    /// The contents of the chunk message.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
+    // Not supported yet:
+    // tool_calls
+}
+
+#[allow(dead_code)]
+#[derive(Serialize, Debug, Clone)]
+#[serde(rename_all = "snake_case")]
+pub enum Role {
+    System,
+    User,
+    Assistant,
+    Tool,
+}
+
+fn string_or_vec<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    deserializer.deserialize_any(StringOrVecVisitor)
+}
+
+struct StringOrVecVisitor;
+
+impl<'de> serde::de::Visitor<'de> for StringOrVecVisitor {
+    type Value = Vec<String>;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("a string or a sequence of strings")
+    }
+
+    fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        Ok(vec![value.to_string()])
+    }
+
+    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+    where
+        A: serde::de::SeqAccess<'de>,
+    {
+        let mut vec = Vec::new();
+        while let Some(elem) = seq.next_element::<String>()? {
+            vec.push(elem);
+        }
+        Ok(vec)
+    }
+}

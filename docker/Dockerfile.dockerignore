@@ -1,0 +1,6 @@
+build
+tmp
+.vscode
+target
+.env
+docker

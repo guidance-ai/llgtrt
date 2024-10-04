@@ -1,0 +1,5 @@
+{
+    "chat_template": "<|begin_of_text|>{% for item in items %}<|start_header_id|>{{ item.role }}<|end_header_id|>\n\n{{ item.content | strip }}<|eot_id|>{% endfor %}<|start_header_id|>assistant<|end_header_id|>\n\n",
+    "eos_token": "<|eot_id|>",
+    "bos_token": "<|begin_of_text|>"
+}

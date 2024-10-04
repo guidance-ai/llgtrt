@@ -1,0 +1,12 @@
+[package]
+name = "trtllm_rs"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.89"
+libc = "0.2.158"
+serde = { version = "1.0.210", features = ["derive"] }
+
+[build-dependencies]
+bindgen = "*"
