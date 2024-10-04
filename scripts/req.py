@@ -279,13 +279,13 @@ def main():
 
         return
 
-    #d = llg_data()
-    d = req_data()
+    d = llg_data()
+    #d = req_data()
     d["n"] = 1
     d["temperature"] = 1.0
     d["max_tokens"] = 100
     # d["stop"] = ["Xked", "d ask"]
-    if True:
+    if False:
         print(send_one(d))
     else:
         d["llg_log_level"] = "json"

@@ -228,6 +228,7 @@ async fn mk_req_info(
         tokens,
         params: req_params,
         client_req_id,
+        is_run,
     };
     let prompt_tokens = req_init.tokens.len();
 

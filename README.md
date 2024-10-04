@@ -131,7 +131,7 @@ which has similar aims, but uses NVidia Triton Server wrapping TensorRT-LLM.
 - [ ] test phi-3.5
 - [ ] multi-modal input
 - [ ] when streaming, and stop is set, we need to buffer the output so as not to return the stop sequence itself
-- [ ] unwind panic for mask computation etc
+- [x] unwind panic for mask computation etc
 - [ ] logprobs
 - [ ] logprobs with argmax sampling and constraints
 - [ ] expose the 'surprise' measure somehow

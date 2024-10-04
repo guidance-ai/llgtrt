@@ -92,6 +92,7 @@ impl ClientReqId {
 pub struct RequestInit {
     pub tokens: Vec<TokenId>,
     pub client_req_id: ClientReqId,
+    pub is_run: bool,
     pub params: RequestParams,
 }
 

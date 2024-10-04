@@ -58,6 +58,7 @@ struct ReqData {
     // this array keeps track of assignment of req_id to llg state
     llg_infos: Vec<ConstraintInfo>,
     prompt_len: usize,
+    is_run: bool,
 }
 
 impl Display for ReqData {
@@ -82,6 +83,7 @@ struct PendingSeq {
     llg: Box<Constraint>,
     llg_idx: usize,
     prompt_len: usize,
+    is_run: bool,
     entry: TlcLogitsEntry,
     stop: bool,
     // setting this will stop the sequence with given error
@@ -143,6 +145,7 @@ impl PendingSeq {
             entry: entry.clone(),
             stop: false,
             error: None,
+            is_run: rd.is_run,
         }
     }
 }
@@ -221,7 +224,8 @@ extern "C" fn logits_processor(logits: *mut TlcLogitsEntry, num_logits: u32) {
                 }
                 Ok(()) => {
                     if ps.stop {
-                        if !ps.llg.parser.stop_reason().is_ok() {
+                        // /v1/run has its own handling of stop reasons
+                        if !ps.is_run && !ps.llg.parser.stop_reason().is_ok() {
                             let msg = format!(
                                 "llg stop reason: {}",
                                 ps.llg.parser.stop_reason().to_string()
@@ -393,6 +397,7 @@ impl AsyncExecutor {
 
         let client_req_id = init.client_req_id;
         let prompt_len = init.tokens.len();
+        let is_run = init.is_run;
 
         // we're locked here, so it's safe to insert only after enqueuing
         let req_id = self.executor.enqueue_request(init)?;
@@ -407,6 +412,7 @@ impl AsyncExecutor {
                 llg_infos: vec![],
                 prompt_len,
                 logs: String::new(),
+                is_run,
             },
         );
         self.req_to_client.insert(req_id, client_req_id);

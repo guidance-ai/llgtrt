@@ -176,6 +176,7 @@ pub async fn run_server(cli_config: Config) -> anyhow::Result<()> {
                 ..Default::default()
             },
             client_req_id: ClientReqId::new(1),
+            is_run: false,
         },
         vec![],
     )?;
