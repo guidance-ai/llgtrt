@@ -1,12 +1,12 @@
-[submodule "TensorRT-LLM"]
-	path = TensorRT-LLM
-	url = https://github.com/NVIDIA/TensorRT-LLM
+[submodule "toktrie"]
+	path = toktrie
+	url = https://github.com/microsoft/toktrie
 [submodule "llguidance"]
 	path = llguidance
 	url = https://github.com/microsoft/llguidance
 [submodule "derivre"]
 	path = derivre
 	url = https://github.com/microsoft/derivre
-[submodule "toktrie"]
-	path = toktrie
-	url = https://github.com/microsoft/toktrie
+[submodule "TensorRT-LLM"]
+	path = TensorRT-LLM
+	url = https://github.com/NVIDIA/TensorRT-LLM
