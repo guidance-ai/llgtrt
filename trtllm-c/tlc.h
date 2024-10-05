@@ -88,6 +88,7 @@ extern "C"
     {
         bool use_logits_post_processor;
         bool streaming;
+        bool logprobs;
         uint32_t max_new_tokens;
         uint32_t num_return_sequences;
         uint32_t eos_token_id;
@@ -136,6 +137,8 @@ extern "C"
         // these are only output tokens
         uint32_t num_tokens;
         int32_t const* tokens;
+        uint32_t num_logprobs;
+        float const* logprobs;
     } TlcResponse;
 
     typedef struct TlcExecutor TlcExecutor;

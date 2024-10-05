@@ -30,7 +30,7 @@ use super::api_ext::{
 use super::openai::{
     ChatCompletion, ChatCompletionChoice, ChatCompletionChunk, ChatCompletionChunkChoice,
     ChatCompletionChunkDelta, ChatCompletionCreateParams, ChatCompletionMessage,
-    CommonCreateParams, Completion, CompletionCreateParams, Role, Usage,
+    CommonCreateParams, Completion, CompletionCreateParams, LogProbs, Role, TopTokenLogProb, Usage,
 };
 
 #[derive(Debug, Clone, Default)]
@@ -72,6 +72,10 @@ fn req_params_from_openai(params: &CommonCreateParams) -> Result<RequestParams> 
         params.max_tokens.is_none() || params.max_completion_tokens.is_none(),
         "max_tokens and max_completion_tokens are mutually exclusive"
     );
+    ensure!(
+        params.logprobs.unwrap_or(0) <= 1,
+        "logprobs > 1 not supported yet"
+    );
     match &params.response_format {
         Some(ResponseFormat::JsonSchema { name: Some(n), .. }) => {
             ensure!(
@@ -96,6 +100,7 @@ fn req_params_from_openai(params: &CommonCreateParams) -> Result<RequestParams> 
         num_return_sequences: params.n as u32,
         frequency_penalty: params.frequency_penalty,
         presence_penalty: params.presence_penalty,
+        logprobs: params.logprobs.unwrap_or(0) > 0,
         ..Default::default()
     };
 
@@ -267,9 +272,11 @@ async fn mk_req_info(
 pub async fn route_completions(
     _headers: HeaderMap,
     State(app_state): State<Arc<AppState>>,
-    request: Json<CompletionCreateParams>,
+    mut request: Json<CompletionCreateParams>,
 ) -> Result<Response, AppError> {
     log::info!("request: {:?}", request);
+
+    request.params.logprobs = request.logprobs;
 
     if let Err(e) = validate_compl(&request) {
         return Err(e.into());
@@ -282,9 +289,13 @@ pub async fn route_completions(
 pub async fn route_chat_completions(
     _headers: HeaderMap,
     State(app_state): State<Arc<AppState>>,
-    request: Json<ChatCompletionCreateParams>,
+    mut request: Json<ChatCompletionCreateParams>,
 ) -> Result<Response, AppError> {
     log::info!("chat request: {:?}", request);
+
+    if request.logprobs {
+        request.params.logprobs = Some(request.top_logprobs.unwrap_or(1));
+    }
 
     if let Err(e) = validate_chat(&request) {
         return Err(e.into());
@@ -378,6 +389,13 @@ impl ReqInfo {
             }
         }
 
+        let logprobs = result.response.logprobs.as_ref().map(|lp| {
+            let trie = self.tok_env.tok_trie();
+            LogProbs {
+                content: lp.iter().map(|v| TopTokenLogProb::new(trie, v)).collect(),
+            }
+        });
+
         let mut text = String::new();
 
         if fork.stop_reason.is_none() {
@@ -435,6 +453,7 @@ impl ReqInfo {
             logs,
             storage: Vec::new(),
             micros: 0,
+            logprobs,
         }
     }
 
@@ -472,6 +491,7 @@ impl ReqInfo {
                 } else {
                     Some(resp.logs)
                 },
+                logprobs: resp.logprobs,
             }],
             usage: self.usage.clone(),
         }
@@ -552,6 +572,7 @@ async fn completions_stream(
 }
 
 async fn completions(mut client: ReqInfo) -> Result<Json<Value>, AppError> {
+    let mut logprobs = vec![];
     while let Some(mut result) = client.recv.recv().await {
         log::debug!("infer response: {:?}", result.response);
         let response = &result.response;
@@ -563,7 +584,10 @@ async fn completions(mut client: ReqInfo) -> Result<Json<Value>, AppError> {
         } else {
             client.usage.completion_tokens += response.tokens.len();
             client.usage.total_tokens += response.tokens.len();
-            let _ = client.update_text(&mut result, false);
+            let r = client.update_text(&mut result, false);
+            if let Some(mut lp) = r.logprobs {
+                logprobs.append(&mut lp.content);
+            }
         }
 
         if client.all_forks_stopped() {
@@ -596,6 +620,13 @@ async fn completions(mut client: ReqInfo) -> Result<Json<Value>, AppError> {
                     None
                 } else {
                     Some(fork.logs)
+                },
+                logprobs: if logprobs.is_empty() {
+                    None
+                } else {
+                    Some(LogProbs {
+                        content: std::mem::take(&mut logprobs),
+                    })
                 },
             })
             .collect(),

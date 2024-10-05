@@ -2,6 +2,7 @@
 #include <string>
 #include <cmath>
 #include <cassert>
+#include <cstdio>
 
 #include "tensorrt_llm/common/logger.h"
 #include "tensorrt_llm/executor/executor.h"
@@ -29,6 +30,7 @@ struct ResponseData
 {
     std::string error;
     tle::VecTokens tokens;
+    tle::VecLogProbs logprobs;
 };
 
 struct TlcExecutor
@@ -104,6 +106,7 @@ TlcStatus tlc_init(TlcInitParams const* params, TlcExecutor** res)
         executorConfig.setMaxNumTokens(ep->max_num_tokens);
         executorConfig.setMaxQueueSize(ep->max_queue_size);
         executorConfig.setMaxSeqIdleMicroseconds(ep->max_queue_delay_microseconds);
+        executorConfig.setNormalizeLogProbs(false);
 
         auto executor
             = new TlcExecutor{tle::Executor(params->engine_path, tle::ModelType::kDECODER_ONLY, executorConfig)};
@@ -128,6 +131,7 @@ TlcStatus tlc_enqueue_request(TlcExecutor* ctx, TlcRequest const* request, TlcRe
         *res = 0;
         tle::OutputConfig outputConfig;
         outputConfig.excludeInputFromOutput = true;
+        outputConfig.returnLogProbs = request->params.logprobs;
 
         tle::SamplingConfig samplingConfig;
 
@@ -227,6 +231,20 @@ TlcStatus tlc_await_responses(
                 }
                 assert(result.outputTokenIds.size() == 1);
                 resp_data.tokens = result.outputTokenIds.at(0);
+                if (result.logProbs.has_value())
+                {
+                    assert(result.logProbs->size() == 1);
+                    auto const& logprobs_ref = result.logProbs->at(0);
+                    // take last |tokens| logprobs
+                    if (logprobs_ref.size() > resp_data.tokens.size())
+                    {
+                        resp_data.logprobs.assign(logprobs_ref.end() - resp_data.tokens.size(), logprobs_ref.end());
+                    }
+                    else
+                    {
+                        resp_data.logprobs = logprobs_ref;
+                    }
+                }
             }
 
             ctx->responses_data.emplace_back(std::move(resp_data));
@@ -241,6 +259,9 @@ TlcStatus tlc_await_responses(
             {
                 c_resp.num_tokens = data.tokens.size();
                 c_resp.tokens = data.tokens.data();
+                c_resp.num_logprobs = data.logprobs.size();
+                if (c_resp.num_logprobs > 0)
+                    c_resp.logprobs = data.logprobs.data();
             }
 
             ctx->responses.emplace_back(c_resp);

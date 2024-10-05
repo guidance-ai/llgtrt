@@ -10,7 +10,7 @@ import argparse
 PROMPT_SIZE = 5
 NUM_THREADS = 10
 NUM_REPS = 3
-LLG = True
+LLG = False
 
 TRT_API_BASE = os.getenv("TRT_API_BASE")
 if TRT_API_BASE is None or TRT_API_BASE == "":
@@ -279,13 +279,14 @@ def main():
 
         return
 
-    d = llg_data()
-    #d = req_data()
+    #d = llg_data()
+    d = req_data()
     d["n"] = 1
     d["temperature"] = 1.0
     d["max_tokens"] = 100
+    d["logprobs"] = True
     # d["stop"] = ["Xked", "d ask"]
-    if False:
+    if True:
         print(send_one(d))
     else:
         d["llg_log_level"] = "json"

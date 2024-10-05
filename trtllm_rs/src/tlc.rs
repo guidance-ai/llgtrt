@@ -3,6 +3,7 @@ use anyhow::{ensure, Result};
 use std::{
     ffi::{CStr, CString},
     fmt::Display,
+    hash::Hash,
     sync::atomic::AtomicU32,
     time::Duration,
 };
@@ -23,6 +24,7 @@ pub struct ResponseChunk {
     pub finish_reason: Option<FinishReason>,
     pub error: Option<String>,
     pub tokens: Vec<TokenId>,
+    pub logprobs: Option<Vec<Vec<(TokenId, f32)>>>,
     pub is_req_final: bool,
 }
 
@@ -57,6 +59,7 @@ impl Default for RequestParams {
             eos_token_id: u32::MAX,
             seed: u64::MAX,
             use_logits_post_processor: false,
+            logprobs: false,
         }
     }
 }
@@ -266,6 +269,32 @@ impl Responder {
                     } else {
                         None
                     };
+                    let tokens = unsafe {
+                        std::slice::from_raw_parts(
+                            resp.tokens as *const u32,
+                            resp.num_tokens as usize,
+                        )
+                    }
+                    .to_vec();
+
+                    let logprobs = if resp.num_logprobs == 0 {
+                        None
+                    } else {
+                        let logprob_data = unsafe {
+                            std::slice::from_raw_parts(resp.logprobs, resp.num_logprobs as usize)
+                        }
+                        .to_vec();
+
+                        assert!(logprob_data.len() == tokens.len());
+                        Some(
+                            tokens
+                                .iter()
+                                .zip(logprob_data.iter())
+                                .map(|(t, p)| vec![(*t, *p)])
+                                .collect(),
+                        )
+                    };
+
                     ResponseChunk {
                         req_id: ReqId(resp.req_id),
                         sequence_idx: resp.sequence_idx,
@@ -281,9 +310,8 @@ impl Responder {
                                     .to_owned(),
                             )
                         },
-                        tokens: (0..resp.num_tokens)
-                            .map(|j| unsafe { *resp.tokens.add(j as usize) as TokenId })
-                            .collect(),
+                        logprobs,
+                        tokens,
                     }
                 })
                 .collect())

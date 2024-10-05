@@ -2,12 +2,18 @@ use super::api_ext::LlgLogLevel;
 use llguidance_parser::api::TopLevelGrammar;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
+use toktrie::{TokTrie, TokenId};
 
 // https://platform.openai.com/docs/api-reference/chat/create
 #[derive(Deserialize, Debug)]
 pub struct ChatCompletionCreateParams {
     /// A list of messages comprising the conversation so far.
     pub messages: Vec<ChatCompletionMessageParams>,
+
+    #[serde(default)]
+    pub logprobs: bool,
+
+    pub top_logprobs: Option<usize>,
 
     #[serde(flatten)]
     pub params: CommonCreateParams,
@@ -95,6 +101,9 @@ pub struct CommonCreateParams {
 
     #[serde(default)]
     pub llg_log_level: LlgLogLevel,
+
+    #[serde(skip)]
+    pub logprobs: Option<usize>,
 }
 
 #[derive(Serialize, Debug)]
@@ -117,7 +126,7 @@ pub struct Completion {
 pub struct CompletionChoice {
     pub text: String,
     pub index: usize,
-    pub logprobs: Option<()>,
+    pub logprobs: Option<LogProbs>,
     pub finish_reason: Option<FinishReason>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub llg_logs: Option<String>,
@@ -215,6 +224,7 @@ pub struct ChatCompletion {
 pub struct ChatCompletionChoice {
     pub index: usize,
     pub message: ChatCompletionMessage,
+    pub logprobs: Option<LogProbs>,
     pub finish_reason: Option<FinishReason>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub llg_logs: Option<String>,
@@ -267,6 +277,7 @@ pub struct ChatCompletionChunkChoice {
     pub index: usize,
     pub delta: ChatCompletionChunkDelta,
     pub finish_reason: Option<FinishReason>,
+    pub logprobs: Option<LogProbs>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub llg_logs: Option<String>,
 }
@@ -326,4 +337,49 @@ impl<'de> serde::de::Visitor<'de> for StringOrVecVisitor {
         }
         Ok(vec)
     }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TokenLogProb {
+    pub token: String,
+    pub logprob: f32,
+    pub bytes: Vec<u8>,
+}
+
+impl TokenLogProb {
+    pub fn new(trie: &TokTrie, token_id: TokenId, logprob: f32) -> Self {
+        let bytes = trie.decode(&[token_id]);
+        TokenLogProb {
+            token: String::from_utf8_lossy(&bytes).to_string(),
+            logprob,
+            bytes,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TopTokenLogProb {
+    #[serde(flatten)]
+    pub chosen: TokenLogProb,
+    pub top_logprobs: Vec<TokenLogProb>,
+}
+
+impl TopTokenLogProb {
+    pub fn new(trie: &TokTrie, toks: &Vec<(TokenId, f32)>) -> Self {
+        let chosen = toks[0];
+        let chosen = TokenLogProb::new(trie, chosen.0, chosen.1);
+        let top_logprobs = toks
+            .iter()
+            .map(|(tok, logprob)| TokenLogProb::new(trie, *tok, *logprob))
+            .collect();
+        TopTokenLogProb {
+            chosen,
+            top_logprobs,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct LogProbs {
+    pub content: Vec<TopTokenLogProb>,
 }
