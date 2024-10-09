@@ -144,18 +144,22 @@ pub async fn run_server(cli_config: Config) -> anyhow::Result<()> {
         p.kv_cache_host_memory_bytes = v * 1024 * 1024;
     }
 
-    log::info!("Initializing executor with config: {:?}", exec_config);
-    let trie = tok_env.tok_trie();
-    let chat_trie = trie.with_eos_token(tok_eos.unwrap_or(trie.eos_token()));
-    let chat_tok_env = Arc::new(TokEnvWithTrie::new(tok_env.clone(), chat_trie));
-    let tok_env: TokEnv = chat_tok_env.clone(); // TODO?
-    let executor = AsyncExecutor::new(tok_env.clone(), exec_config)?;
-    let constraint_mgr = ConstraintMgr::new(tok_env.clone(), chat_tok_env.clone(), llg_config)?;
-
     let mpi0 = env::var("OMPI_COMM_WORLD_RANK")
         .or_else(|_| env::var("PMI_RANK"))
         .unwrap_or_else(|_| "0".to_string())
         == "0";
+
+    log::info!(
+        "Initializing {} executor with config: {:?}",
+        if mpi0 { "leader" } else { "worker" },
+        exec_config,
+    );
+    let trie = tok_env.tok_trie();
+    let chat_trie = trie.with_eos_token(tok_eos.unwrap_or(trie.eos_token()));
+    let chat_tok_env = Arc::new(TokEnvWithTrie::new(tok_env.clone(), chat_trie));
+    let tok_env: TokEnv = chat_tok_env.clone(); // TODO?
+    let executor = AsyncExecutor::new(tok_env.clone(), exec_config, mpi0)?;
+    let constraint_mgr = ConstraintMgr::new(tok_env.clone(), chat_tok_env.clone(), llg_config)?;
 
     if !mpi0 {
         loop {

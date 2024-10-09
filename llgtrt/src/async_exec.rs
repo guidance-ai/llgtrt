@@ -300,7 +300,7 @@ impl AsyncExecutor {
         self.executor.cancel_request(req_id)
     }
 
-    pub fn new(tok_env: TokEnv, mut executor_init: ExecutorInit) -> Result<Self> {
+    pub fn new(tok_env: TokEnv, mut executor_init: ExecutorInit, leader: bool) -> Result<Self> {
         let trie = tok_env.tok_trie();
         let n_vocab = trie.vocab_size();
         executor_init.logits_callback = Some(logits_processor);
@@ -320,7 +320,7 @@ impl AsyncExecutor {
                 .await_responses(std::time::Duration::from_millis(1))
                 .unwrap();
 
-            if resps.len() == 0 {
+            if resps.len() == 0 || !leader {
                 continue;
             }
 
