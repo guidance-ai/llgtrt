@@ -99,6 +99,10 @@ pub struct CommonCreateParams {
     /// model generates is valid JSON.
     pub response_format: Option<ResponseFormat>,
 
+    /// The minimum number of tokens to generate in the completion.
+    #[serde(default = "default_min_tokens")]
+    pub min_tokens: usize,
+
     #[serde(default)]
     pub llg_log_level: LlgLogLevel,
 
@@ -156,6 +160,10 @@ fn default_temperature() -> f32 {
 
 fn default_top_p() -> f32 {
     1.0
+}
+
+fn default_min_tokens() -> usize {
+    1
 }
 
 #[derive(Deserialize, Debug, Clone)]
