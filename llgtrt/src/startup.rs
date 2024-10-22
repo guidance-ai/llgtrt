@@ -1,4 +1,3 @@
-use std::env;
 use std::fmt::Debug;
 use std::sync::Arc;
 
@@ -150,18 +149,8 @@ pub async fn run_server(cli_config: Config) -> anyhow::Result<()> {
     let chat_tok_env = Arc::new(TokEnvWithTrie::new(tok_env.clone(), chat_trie));
     let tok_env: TokEnv = chat_tok_env.clone(); // TODO?
     let executor = AsyncExecutor::new(tok_env.clone(), exec_config)?;
+    // we only get here on rank 0
     let constraint_mgr = ConstraintMgr::new(tok_env.clone(), chat_tok_env.clone(), llg_config)?;
-
-    let mpi0 = env::var("OMPI_COMM_WORLD_RANK")
-        .or_else(|_| env::var("PMI_RANK"))
-        .unwrap_or_else(|_| "0".to_string())
-        == "0";
-
-    if !mpi0 {
-        loop {
-            std::thread::sleep(std::time::Duration::from_secs(1));
-        }
-    }
 
     AsyncExecutor::set_global(executor);
 

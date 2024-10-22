@@ -3,6 +3,7 @@ members = [
     "trtllm_rs",
     "llgtrt",
     "llguidance/parser",
+    "llguidance/sample_parser",
     "toktrie/core",
     "toktrie/hf_tokenizers",
     "derivre",
@@ -17,6 +18,7 @@ resolver = "2"
 
 [patch.'https://github.com/microsoft/toktrie']
 toktrie = { path = "toktrie/core" }
+toktrie_hf_tokenizers = { path = "toktrie/hf_tokenizers" }
 
 [patch.'https://github.com/microsoft/derivre']
 derivre = { path = "derivre" }
