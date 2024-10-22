@@ -1,4 +1,4 @@
-FROM nvcr.io/nvidia/tensorrt:24.08-py3 AS llgtrt_dev
+FROM nvcr.io/nvidia/tensorrt:24.09-py3 AS llgtrt_dev
 
 RUN apt-get update
 RUN DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
