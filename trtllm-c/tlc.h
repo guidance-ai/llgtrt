@@ -143,6 +143,7 @@ extern "C"
     void tlc_default_init_params(TlcInitParams* params);
     TlcStatus tlc_init(TlcInitParams const* params, TlcExecutor** res);
     bool tlc_can_enqueue_request(TlcExecutor* ctx);
+    void tlc_shutdown(TlcExecutor* ctx);
     TlcStatus tlc_enqueue_request(TlcExecutor* ctx, TlcRequest const* request, TlcReqId* res);
     TlcStatus tlc_cancel_request(TlcExecutor* ctx, TlcReqId req_id);
     TlcStatus tlc_await_responses(

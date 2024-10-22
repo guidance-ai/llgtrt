@@ -121,6 +121,11 @@ bool tlc_can_enqueue_request(TlcExecutor* ctx)
     return ctx->executor.canEnqueueRequests();
 }
 
+void tlc_shutdown(TlcExecutor* ctx)
+{
+    ctx->executor.shutdown();
+}
+
 TlcStatus tlc_enqueue_request(TlcExecutor* ctx, TlcRequest const* request, TlcReqId* res)
 {
     TRY

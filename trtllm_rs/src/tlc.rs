@@ -182,6 +182,13 @@ impl Executor {
         unsafe { ffi::tlc_can_enqueue_request(self.inner) }
     }
 
+    pub fn check_mpi(&self) {
+        if !self.can_enqueue_request() {
+            unsafe { ffi::tlc_shutdown(self.inner) };
+            std::process::exit(0);
+        }
+    }
+
     pub fn enqueue_request(&mut self, init: RequestInit) -> Result<ReqId> {
         ensure!(self.can_enqueue_request(), "Cannot enqueue request");
         ensure!(

@@ -337,6 +337,9 @@ impl AsyncExecutor {
         log::info!("new executor: n_vocab={n_vocab} max_batch_size={max_batch_size}");
         let (executor, mut responder) = Executor::new(executor_init)?;
 
+        // on non-0 ranks, this will just wait until the rank 0 exits and then exit the process
+        executor.check_mpi();
+
         let res = Self {
             executor,
             req_data: HashMap::new(),
