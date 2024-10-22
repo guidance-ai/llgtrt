@@ -124,10 +124,7 @@ fn validate_chat(req: &ChatCompletionCreateParams) -> Result<()> {
 }
 
 fn llg_grammar(params: &CommonCreateParams) -> Result<Option<TopLevelGrammar>> {
-    let opts = JsonCompileOptions {
-        compact: false,
-        validate: true,
-    };
+    let opts = JsonCompileOptions { compact: false };
     let grm = match &params.response_format {
         Some(ResponseFormat::Llguidance { grammar }) => grammar.clone(),
         Some(ResponseFormat::JsonObject)
