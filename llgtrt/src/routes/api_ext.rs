@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use super::openai::{
     ChatCompletion, ChatCompletionChunk, ChatCompletionMessageParams, Completion, CompletionChoice,
-    FinishReason,
+    FinishReason, LogProbs,
 };
 
 #[derive(Deserialize, Debug, Clone, Copy)]
@@ -83,6 +83,7 @@ pub struct RunForkResponse {
     pub logs: String,
     pub storage: Vec<serde_json::Value>,
     pub micros: u64,
+    pub logprobs: Option<LogProbs>,
 }
 
 impl Completion {

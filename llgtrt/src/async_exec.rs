@@ -271,6 +271,7 @@ extern "C" fn logits_processor(logits: *mut TlcLogitsEntry, num_logits: u32) {
                             finish_reason: Some(trtllm_rs::FinishReason::Unknown),
                             error: Some(err),
                             is_req_final: true,
+                            logprobs: None,
                             tokens: vec![],
                         },
                         logs: std::mem::take(&mut rd.logs),
