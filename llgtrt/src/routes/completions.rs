@@ -101,6 +101,7 @@ fn req_params_from_openai(params: &CommonCreateParams) -> Result<RequestParams> 
         frequency_penalty: params.frequency_penalty,
         presence_penalty: params.presence_penalty,
         logprobs: params.logprobs.unwrap_or(0) > 0,
+        min_tokens: params.min_tokens as u32,
         ..Default::default()
     };
 

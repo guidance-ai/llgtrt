@@ -51,6 +51,27 @@ curl -X POST "${TRT_API_BASE}chat/completions" \
 }' | jq
 ;;
 
+  chat_min_tokens)
+curl -X POST "${TRT_API_BASE}chat/completions" \
+-H "Content-Type: application/json" \
+-d '{
+  "model": "model",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a helpful assistant."
+    },
+    {
+      "role": "user",
+      "content": "Please tell me a one line joke."
+    }
+  ],
+  "max_tokens": 100,
+  "min_tokens": 100,
+  "temperature": 1.2
+}' | jq
+;;
+
   json)
 curl -v -X POST "${TRT_API_BASE}chat/completions" \
 -H "Content-Type: application/json" \
