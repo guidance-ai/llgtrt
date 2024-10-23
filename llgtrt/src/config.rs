@@ -2,7 +2,6 @@ use clap::{Args, Parser};
 use serde::{Deserialize, Serialize};
 
 const TRT_CONFIG: &str = "TensorRT-LLM runtime config (runtime.json)";
-const CHAT_CONFIG: &str = "Chat template and special token config (chat.json)";
 
 #[derive(Args, Debug, Serialize, Deserialize)]
 pub struct TrtLlmRuntimeConfig {
@@ -39,21 +38,6 @@ pub struct TrtLlmRuntimeConfig {
     pub kv_cache_host_memory_megabytes: Option<usize>,
 }
 
-#[derive(Args, Debug, Serialize, Deserialize)]
-pub struct ChatTemplates {
-    /// Specify template for chat messages in 'liquid' syntax
-    #[clap(long, help_heading = CHAT_CONFIG)]
-    pub chat_template: Option<String>,
-
-    /// Specify an end-of-sequence token, like "<|eot_id|>"
-    #[clap(long, help_heading = CHAT_CONFIG)]
-    pub eos_token: Option<String>,
-
-    /// Specify an beginning-of-sequence token, like "<|begin_of_text|>"
-    #[clap(long, help_heading = CHAT_CONFIG)]
-    pub bos_token: Option<String>,
-}
-
 #[derive(Parser, Debug, Serialize, Deserialize)]
 pub struct Config {
     /// Host to bind to
@@ -68,13 +52,9 @@ pub struct Config {
     #[arg(long, short = 'E')]
     pub engine: String,
 
-    /// Path to HF tokenizer.json file; defaults to tokenizer.json in engine dir
+    /// Path to folder with HF tokenizer.json and tokenizer_config.json files; defaults to --engine
     #[arg(long, short = 'T')]
     pub tokenizer: Option<String>,
-
-    /// Path to JSON file with chat templates etc.; defaults to chat.json in engine dir
-    #[arg(long, short = 'C')]
-    pub chat_config: Option<String>,
 
     /// Path to JSON file TensorRT-LLM runtime config; defaults to runtime.json in engine dir
     #[arg(long, short = 'R')]
@@ -94,9 +74,6 @@ pub struct Config {
 
     #[clap(flatten)]
     pub runtime_config_inline: TrtLlmRuntimeConfig,
-
-    #[clap(flatten)]
-    pub chat_config_inline: ChatTemplates,
 
     /// Api Key to access the server
     #[arg(long)]

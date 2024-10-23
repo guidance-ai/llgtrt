@@ -1,57 +1,135 @@
-use crate::routes::openai::ChatCompletionMessageParams;
-use liquid::{ParserBuilder, Template};
-use serde_json::{json, Value};
+use crate::{
+    routes::openai::{ChatCompletionMessageContentPart, ChatCompletionMessageParams},
+    tokenizer::TokenizerConfig,
+};
+use anyhow::anyhow;
+use minijinja::Environment;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+
+const DEFAULT_TEMPLATE: &str = r#"{{- bos_token }}
+{%- for message in messages %}
+    {{- '<|' + message['role'] + |>\n' }}
+    {{- message['content'] + eos_token }}
+{%- endfor %}
+{%- if add_generation_prompt %}
+    {{- '<|assistant|>\n' }}
+{%- endif %}"#;
 
 pub struct ChatBuilder {
-    template: Template,
+    default_context: TemplateContext,
+    env: Environment<'static>,
 }
 
-const DEFAULT_TEMPLATE: &str = "{% for item in items %}{{ item.role }}: {{ item.content }}
-{% endfor %}assistant:";
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ChatDocument {
+    title: String,
+    text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct TemplateContext {
+    messages: Vec<ChatCompletionMessageParams>,
+    tools: Option<Vec<Value>>,
+    documents: Option<Vec<ChatDocument>>,
+    date_string: String,
+    add_generation_prompt: bool,
+    tools_in_user_message: Option<bool>,
+    bos_token: Option<String>,
+    eos_token: String,
+    unk_token: Option<String>,
+    sep_token: Option<String>,
+    pad_token: Option<String>,
+    cls_token: Option<String>,
+    mask_token: Option<String>,
+}
+
+fn date_string() -> String {
+    // 3 October 2024
+    chrono::Utc::now().format("%e %B %Y").to_string()
+}
 
 impl ChatBuilder {
-    pub fn new(template: Option<&str>) -> anyhow::Result<Self> {
-        let template = ParserBuilder::with_stdlib()
-            .build()?
-            .parse(template.unwrap_or(DEFAULT_TEMPLATE))?;
-        Ok(ChatBuilder { template })
+    pub fn new(config: &TokenizerConfig) -> anyhow::Result<Self> {
+        let default_context = TemplateContext {
+            messages: vec![],
+            tools: None,
+            documents: None,
+            add_generation_prompt: true,
+            tools_in_user_message: None,
+            date_string: date_string(),
+            bos_token: config.bos_token.clone(),
+            eos_token: config.eos_token.clone(),
+            unk_token: config.unk_token.clone(),
+            sep_token: config.sep_token.clone(),
+            pad_token: config.pad_token.clone(),
+            cls_token: config.cls_token.clone(),
+            mask_token: config.mask_token.clone(),
+        };
+        let mut env = Environment::new();
+        let template = config
+            .chat_template
+            .clone()
+            .unwrap_or_else(|| DEFAULT_TEMPLATE.to_string());
+        log::info!("chat template:\n{}", template);
+        env.add_template_owned("chat", template)
+            .map_err(|e| anyhow!("error parsing chat_template: {}", e))?;
+        let res = Self {
+            default_context,
+            env,
+        };
+        // make sure the template is valid
+        let msg = res.build(&vec![
+            ChatCompletionMessageParams::System {
+                content: Some("Be a good model".to_string()),
+                name: None,
+            },
+            ChatCompletionMessageParams::User {
+                content: ChatCompletionMessageContentPart::Text("Hello".to_string()),
+                name: None,
+            },
+        ])?;
+        log::info!("chat template result:\n{}", msg);
+        Ok(res)
     }
 
     pub fn build(&self, messages: &Vec<ChatCompletionMessageParams>) -> anyhow::Result<String> {
-        let items: Vec<_> = messages.iter().map(chat_to_json).collect();
-        let context = liquid::object!({ "items": items });
-        Ok(self.template.render(&context)?)
+        let mut context = self.default_context.clone();
+        context.messages = messages.iter().map(|x| x.flatten()).collect();
+        context.date_string = date_string();
+        let context_non_null = serde_json::to_value(&context)?
+            .as_object()
+            .unwrap()
+            .iter()
+            .fold(serde_json::Map::new(), |mut acc, (k, v)| {
+                if !v.is_null() {
+                    acc.insert(k.clone(), v.clone());
+                }
+                acc
+            });
+        let r = self.env.get_template("chat")?.render(&context_non_null)?;
+        Ok(r)
     }
 }
 
-fn chat_to_json(message: &ChatCompletionMessageParams) -> Value {
-    match message {
-        ChatCompletionMessageParams::System { content, name } => {
-            json!({
-                "role": "system",
-                "content": content,
-                "name": name,
-            })
-        }
-        ChatCompletionMessageParams::User { content, name } => {
-            json!({
-                "role": "user",
-                "content": content,
-                "name": name,
-            })
-        }
-        ChatCompletionMessageParams::Assistant { content, name, .. } => {
-            json!({
-                "role": "assistant",
-                "name": name,
-                "content": content,
-            })
-        }
-        ChatCompletionMessageParams::Tool { content, .. } => {
-            json!({
-                "role": "tool",
-                "content": content,
-            })
+impl ChatCompletionMessageParams {
+    // HF templates generally don't support multiple content parts, so we flatten them here
+    pub fn flatten(&self) -> Self {
+        match self {
+            ChatCompletionMessageParams::User {
+                content: ChatCompletionMessageContentPart::ContentParts(parts),
+                name,
+            } => ChatCompletionMessageParams::User {
+                content: ChatCompletionMessageContentPart::Text(
+                    parts
+                        .iter()
+                        .map(|part| part.text.clone())
+                        .collect::<Vec<_>>()
+                        .join("\n"),
+                ),
+                name: name.clone(),
+            },
+            x => x.clone(),
         }
     }
 }

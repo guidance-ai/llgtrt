@@ -26,8 +26,7 @@
 			"extensions": [
 				"ms-python.python",
 				"ms-python.black-formatter",
-				"1YiB.rust-bundle",
-				"dtsvet.vscode-wasm",
+				"rust-lang.rust-analyzer",
 				"ms-vscode.cpptools",
 				"esbenp.prettier-vscode",
 				"streetsidesoftware.code-spell-checker",

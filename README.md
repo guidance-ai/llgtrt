@@ -67,8 +67,9 @@ trtllm-build --checkpoint_dir /models/model-ckpt \
 # clean up ckpt (optional)
 rm -rf /models/model-ckpt
 
-# finally, copy tokenizer.json
+# finally, copy tokenizer.json and tokenizer_config.json
 cp /models/Meta-Llama-3.1-8B-Instruct/tokenizer.json /models/model-engine
+cp /models/Meta-Llama-3.1-8B-Instruct/tokenizer_config.json /models/model-engine
 
 # exit the container
 exit
@@ -81,9 +82,9 @@ If you're running on more than one 1 GPU, modify the `--tp_size` argument.
 
 ### Create config files
 
-If you are running a chat-tuned model, you will need `/models/model-engine/chat.json`.
-You may copy one of the [chat config files](./llgtrt/chat_config/),
-or else use them as a template to create your own.
+By default, llgtrt will use chat template from `tokenizer_config.json`.
+If present, it will also read `tokenizer_config_llgtrt.json` from the same directory
+and apply any keys from it to `tokenizer_config.json`.
 
 You can also modify TensortRT-LLM's runtime configuration with `runtime.json` file
 and `llguidance_parser` configuration with `llguidance.json`.

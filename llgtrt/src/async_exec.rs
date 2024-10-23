@@ -16,7 +16,7 @@ use trtllm_rs::{
     TlcLogitsEntry,
 };
 
-use crate::routes::openai::FinishReason;
+use crate::{chat::ChatBuilder, config::Config, routes::openai::FinishReason, tokenizer::setup_tokenizer};
 
 pub struct StepResults {
     pub response: ResponseChunk,
@@ -330,16 +330,19 @@ impl AsyncExecutor {
         self.executor.cancel_request(req_id)
     }
 
-    pub fn new(tok_env: TokEnv, mut executor_init: ExecutorInit) -> Result<Self> {
-        let trie = tok_env.tok_trie();
-        let n_vocab = trie.vocab_size();
+    pub fn new(cli_config: &Config, mut executor_init: ExecutorInit) -> Result<(Self, TokEnv, ChatBuilder)> {
         executor_init.logits_callback = Some(logits_processor);
         let max_batch_size = executor_init.trt_params.max_batch_size as usize;
-        log::info!("new executor: n_vocab={n_vocab} max_batch_size={max_batch_size}");
+        log::info!("new executor: max_batch_size={max_batch_size}");
         let (executor, mut responder) = Executor::new(executor_init)?;
 
         // on non-0 ranks, this will just wait until the rank 0 exits and then exit the process
         executor.check_mpi();
+
+        // only setup tokenizer on rank 0
+        let (tok_env, chat_builder) = setup_tokenizer(cli_config)?;
+        let trie = tok_env.tok_trie();
+        let n_vocab = trie.vocab_size();
 
         let res = Self {
             executor,
@@ -387,7 +390,7 @@ impl AsyncExecutor {
                 }
             }
         });
-        Ok(res)
+        Ok((res, tok_env, chat_builder))
     }
 
     pub fn add_request(

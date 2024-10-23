@@ -166,24 +166,44 @@ fn default_min_tokens() -> usize {
     1
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct ContentPart {
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub text: String,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(untagged)]
+pub enum ChatCompletionMessageContentPart {
+    Text(String),
+    ContentParts(Vec<ContentPart>),
+}
+
+impl Default for ChatCompletionMessageContentPart {
+    fn default() -> Self {
+        ChatCompletionMessageContentPart::Text(String::new())
+    }
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(tag = "role", rename_all = "lowercase")]
 pub enum ChatCompletionMessageParams {
     System {
-        content: String,
+        content: Option<String>,
         name: Option<String>,
     },
     User {
-        content: String,
+        content: ChatCompletionMessageContentPart,
         name: Option<String>,
     },
     Assistant {
-        content: String,
+        content: Option<String>,
         name: Option<String>,
         tool_calls: Option<Vec<serde_json::Value>>,
     },
     Tool {
-        content: String,
+        content: Option<String>,
         tool_call_id: String,
     },
 }

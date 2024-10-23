@@ -1,6 +1,7 @@
 pub mod config;
 mod error;
 mod chat;
+mod tokenizer;
 pub mod routes;
 pub mod startup;
 pub mod state;

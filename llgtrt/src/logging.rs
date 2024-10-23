@@ -59,7 +59,7 @@ fn truncated_format(
         "{} [{}] {}",
         style(level).paint(level.to_string()),
         record.module_path().unwrap_or("<unnamed>"),
-        style(level).paint(args_to_str(1000, record.args()))
+        style(level).paint(args_to_str(5000, record.args()))
     )
 }
 

@@ -1,19 +1,16 @@
 use std::fmt::Debug;
 use std::sync::Arc;
 
-use anyhow::ensure;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::Response;
 use axum::routing::{get, post};
 use axum::Router;
-use toktrie::{TokEnv, TokEnvWithTrie};
 use trtllm_rs::{ClientReqId, ExecutorInit, RequestInit, RequestParams};
 
 use crate::async_exec::AsyncExecutor;
-use crate::chat::ChatBuilder;
-use crate::config::{ChatTemplates, Config, TrtLlmRuntimeConfig};
+use crate::config::{Config, TrtLlmRuntimeConfig};
 use crate::constraint_mgr::ConstraintMgr;
 use crate::routes;
 use crate::state::AppState;
@@ -51,7 +48,7 @@ where
         let s = std::fs::read_to_string(name)?;
         serde_json::from_str(&s)?
     } else {
-        log::info!("Config file not found, using defaults");
+        log::info!("Config file {} not found, using defaults", name);
         serde_json::json!({})
     };
 
@@ -69,50 +66,16 @@ where
 }
 
 pub async fn run_server(cli_config: Config) -> anyhow::Result<()> {
-    let tokenizer = cli_config
-        .tokenizer
-        .unwrap_or_else(|| format!("{}/tokenizer.json", cli_config.engine));
-    log::info!("Loading tokenizer from {:?}", tokenizer);
-    let tok_env = toktrie_hf_tokenizers::ByteTokenizerEnv::from_name(&tokenizer, None)?;
-    let tok_env: TokEnv = Arc::new(tok_env);
-
-    let chat_config: ChatTemplates = load_config_file(
-        &cli_config.chat_config,
-        format!("{}/chat.json", cli_config.engine),
-        serde_json::to_value(&cli_config.chat_config_inline)?,
-    )?;
-
-    let mut tok_eos = None;
-    if let Some(s) = &chat_config.eos_token {
-        let toks = tok_env.tokenize(s);
-        ensure!(toks.len() == 1, "EOS token must tokenize to a single token");
-        tok_eos = Some(toks[0]);
-    }
-
-    let mut tok_bos = None;
-    if let Some(s) = &chat_config.bos_token {
-        let toks = tok_env.tokenize(s);
-        ensure!(toks.len() == 1, "BOS token must tokenize to a single token");
-        tok_bos = Some(toks[0]);
-    }
-
     let mut exec_config = ExecutorInit {
         engine_path: cli_config.engine.clone(),
         logits_callback: None,
         trt_params: Default::default(),
     };
-    let chat_builder = ChatBuilder::new(chat_config.chat_template.as_ref().map(|x| x.as_str()))?;
 
     let runtime_config: TrtLlmRuntimeConfig = load_config_file(
         &cli_config.runtime_config,
         format!("{}/runtime.json", cli_config.engine),
         serde_json::to_value(&cli_config.runtime_config_inline)?,
-    )?;
-
-    let llg_config: serde_json::Value = load_config_file(
-        &cli_config.llguidance_config,
-        format!("{}/llguidance.json", cli_config.engine),
-        serde_json::json!({}),
     )?;
 
     let p = &mut exec_config.trt_params;
@@ -144,13 +107,18 @@ pub async fn run_server(cli_config: Config) -> anyhow::Result<()> {
     }
 
     log::info!("Initializing executor with config: {:?}", exec_config);
-    let trie = tok_env.tok_trie();
-    let chat_trie = trie.with_eos_token(tok_eos.unwrap_or(trie.eos_token()));
-    let chat_tok_env = Arc::new(TokEnvWithTrie::new(tok_env.clone(), chat_trie));
-    let tok_env: TokEnv = chat_tok_env.clone(); // TODO?
-    let executor = AsyncExecutor::new(tok_env.clone(), exec_config)?;
+
+    let (executor, tok_env, chat_builder) = AsyncExecutor::new(&cli_config, exec_config)?;
+
     // we only get here on rank 0
-    let constraint_mgr = ConstraintMgr::new(tok_env.clone(), chat_tok_env.clone(), llg_config)?;
+
+    let llg_config: serde_json::Value = load_config_file(
+        &cli_config.llguidance_config,
+        format!("{}/llguidance.json", cli_config.engine),
+        serde_json::json!({}),
+    )?;
+
+    let constraint_mgr = ConstraintMgr::new(tok_env.clone(), tok_env.clone(), llg_config)?;
 
     AsyncExecutor::set_global(executor);
 
@@ -174,17 +142,13 @@ pub async fn run_server(cli_config: Config) -> anyhow::Result<()> {
     }
     log::info!("Warmup: {}", tok_env.tok_trie().tokens_dbg(&resp));
 
-    let tok_bos = if tok_bos.is_some() {
-        tok_bos
-    } else {
-        tok_env.tok_trie().info().tok_bos
-    };
+    let trie = tok_env.tok_trie();
 
     let state = AppState {
+        tok_bos: trie.info().tok_bos,
+        tok_eos_chat: Some(trie.info().tok_eos),
+        tok_eos_completions: Some(trie.info().tok_eos),
         tok_env,
-        tok_bos,
-        tok_eos_chat: tok_eos,
-        tok_eos_completions: tok_eos,
         next_client_req_id: std::sync::atomic::AtomicUsize::new(1000),
         chat_builder,
         constraint_mgr,
