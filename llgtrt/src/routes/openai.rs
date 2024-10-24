@@ -15,11 +15,65 @@ pub struct ChatCompletionCreateParams {
 
     pub top_logprobs: Option<usize>,
 
+    /// A list of tools the model may call.
+    #[serde(default)]
+    pub tools: Vec<Tool>,
+
+    /// Controls which (if any) tool is called by the model.
+    #[serde(default)]
+    pub tool_choice: ToolChoice,
+
     #[serde(flatten)]
     pub params: CommonCreateParams,
-    // Not supported yet:
-    // tools
-    // tool_choices
+}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum ToolChoice {
+    Simple(ToolChoiceOption),
+    Advanced(ToolChoiceAdvanced),
+}
+
+impl Default for ToolChoice {
+    fn default() -> Self {
+        ToolChoice::Simple(ToolChoiceOption::Auto)
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ToolChoiceAdvanced {
+    Function { name: String },
+}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolChoiceOption {
+    /// The model can pick between generating a message or calling one or more tools.
+    Auto,
+    /// The model will not call any tool and instead generates a message
+    None,
+    /// The model must call one or more tools.
+    Required,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum Tool {
+    Function { function: FunctionTool },
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct FunctionTool {
+    /// The name of the function to be called. Must be a-z, A-Z, 0-9, or contain underscores and dashes, with a maximum length of 64.
+    pub name: String,
+    /// A description of what the function does, used by the model to choose when and how to call the function.
+    pub description: Option<String>,
+    /// A JSON schema for the 'parameters' object.
+    #[serde(default)]
+    pub parameters: serde_json::Value,
+    /// Whether to enable strict schema adherence when generating the function call. If set to true, the model will follow the exact schema defined in the parameters field. Only a subset of JSON Schema is supported when strict is true.
+    pub strict: Option<bool>,
 }
 
 // https://platform.openai.com/docs/api-reference/completions/create

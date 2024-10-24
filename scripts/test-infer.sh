@@ -72,6 +72,42 @@ curl -X POST "${TRT_API_BASE}chat/completions" \
 }' | jq
 ;;
 
+  tools)
+curl -X POST "${TRT_API_BASE}chat/completions" \
+-H "Content-Type: application/json" -v \
+-d '{
+  "model": "model",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a helpful assistant."
+    },
+    {
+      "role": "user",
+      "content": "What is the weather in Seattle?"
+    }
+  ],
+  "max_tokens": 100,
+  "temperature": 0.8,
+  "tools": [{
+    "type": "function",
+    "function": {
+      "name": "weather",
+      "description": "Get the weather for a location",
+      "strict": true,
+      "parameters": {
+         "type": "object",
+         "properties": {
+             "location": { "type": "string" }
+         },
+         "additionalProperties": false,
+         "required": ["location"]
+      }
+    }
+  }]
+}' | jq
+;;
+
   json)
 curl -v -X POST "${TRT_API_BASE}chat/completions" \
 -H "Content-Type: application/json" \

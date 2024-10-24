@@ -1,5 +1,5 @@
 //! https://platform.openai.com/docs/api-reference/completions/create
-use anyhow::{bail, ensure, Result};
+use anyhow::{anyhow, bail, ensure, Result};
 use async_stream::try_stream;
 use axum::extract::State;
 use axum::http::HeaderMap;
@@ -18,10 +18,11 @@ use trtllm_rs::{ClientReqId, ReqId, RequestInit, RequestParams, TokenId};
 use uuid::Uuid;
 
 use crate::async_exec::{map_finish_reason, AsyncExecutor, StepResults};
+use crate::chat::ChatParams;
 use crate::constraint_mgr::ConstraintInit;
 use crate::error::AppError;
-use crate::routes::api_ext::LlgLogLevel;
-use crate::routes::openai::ResponseFormat;
+use crate::routes::api_ext::{tools_to_schema, LlgLogLevel};
+use crate::routes::openai::{ResponseFormat, ToolChoice};
 use crate::state::AppState;
 
 use super::api_ext::{
@@ -30,7 +31,8 @@ use super::api_ext::{
 use super::openai::{
     ChatCompletion, ChatCompletionChoice, ChatCompletionChunk, ChatCompletionChunkChoice,
     ChatCompletionChunkDelta, ChatCompletionCreateParams, ChatCompletionMessage,
-    CommonCreateParams, Completion, CompletionCreateParams, LogProbs, Role, TopTokenLogProb, Usage,
+    CommonCreateParams, Completion, CompletionCreateParams, LogProbs, Role, ToolChoiceOption,
+    TopTokenLogProb, Usage,
 };
 
 #[derive(Debug, Clone, Default)]
@@ -126,16 +128,23 @@ fn validate_compl(req: &CompletionCreateParams) -> Result<()> {
 
 fn validate_chat(req: &ChatCompletionCreateParams) -> Result<()> {
     let _ = req_params_from_openai(&req.params)?;
+    ensure!(
+        req.tool_choice == ToolChoice::Simple(ToolChoiceOption::Auto),
+        "only 'auto' option is currently supported for tool_choice"
+    );
+    ensure!(
+        req.tools.is_empty() || req.params.response_format.is_none(),
+        "response_format cannot be specified together with tools"
+    );
     Ok(())
 }
 
 fn llg_grammar(params: &CommonCreateParams) -> Result<Option<TopLevelGrammar>> {
-    let opts = JsonCompileOptions { compact: false };
     let grm = match &params.response_format {
         Some(ResponseFormat::Llguidance { grammar }) => grammar.clone(),
         Some(ResponseFormat::JsonObject)
         | Some(ResponseFormat::JsonSchema { strict: false, .. }) => {
-            opts.json_to_llg(&json!({ "type": "object" }))?
+            json_to_llg(&json!({ "type": "object" }))?
         }
         Some(ResponseFormat::JsonSchema {
             schema: None,
@@ -148,7 +157,7 @@ fn llg_grammar(params: &CommonCreateParams) -> Result<Option<TopLevelGrammar>> {
             schema: Some(schema),
             strict: true,
             ..
-        }) => opts.json_to_llg(schema)?,
+        }) => json_to_llg(schema)?,
         _ => return Ok(None),
     };
     Ok(Some(grm))
@@ -272,7 +281,7 @@ pub async fn route_completions(
     State(app_state): State<Arc<AppState>>,
     mut request: Json<CompletionCreateParams>,
 ) -> Result<Response, AppError> {
-    log::info!("request: {:?}", request);
+    log::debug!("request: {:?}", request);
 
     request.params.logprobs = request.logprobs;
 
@@ -289,7 +298,7 @@ pub async fn route_chat_completions(
     State(app_state): State<Arc<AppState>>,
     mut request: Json<ChatCompletionCreateParams>,
 ) -> Result<Response, AppError> {
-    log::info!("chat request: {:?}", request);
+    log::debug!("chat request: {:?}", request);
 
     if request.logprobs {
         request.params.logprobs = Some(request.top_logprobs.unwrap_or(1));
@@ -299,13 +308,28 @@ pub async fn route_chat_completions(
         return Err(e.into());
     }
 
-    let chat_history = app_state.chat_builder.build(&request.messages)?;
-    log::debug!("chat history after formatting:\n{:?}", chat_history);
+    if request.tools.len() > 0 {
+        let schema = tools_to_schema(&request.tools);
+        log::debug!("tools schema: {}", serde_json::to_string_pretty(&schema)?);
+        let grammar = json_to_llg(&schema)?;
+        request.params.response_format = Some(ResponseFormat::Llguidance { grammar });
+    }
+
+    let chat_history = app_state.chat_builder.build(ChatParams {
+        messages: &request.messages,
+        tools: &request.tools,
+    })?;
 
     let tokens = app_state.tokenize_with_bos(&chat_history);
     log::debug!("{}", app_state.tok_env.tok_trie().tokens_dbg(&tokens));
 
     mk_req_info(&app_state, tokens, &request.params, true, false).await
+}
+
+fn json_to_llg(schema: &Value) -> Result<TopLevelGrammar> {
+    let opts = JsonCompileOptions { compact: false };
+    opts.json_to_llg(schema)
+        .map_err(|e| anyhow!("error compiling JSON schema to LLG: {}", e))
 }
 
 fn valid_utf8_len(data: &Vec<u8>) -> usize {
@@ -524,7 +548,7 @@ impl ReqInfo {
             }
         }
 
-        log::debug!("infer response: {:?}", response);
+        log::trace!("infer response: {:?}", response);
         self.usage.completion_tokens += response.tokens.len();
         self.usage.total_tokens += response.tokens.len();
 
@@ -572,7 +596,7 @@ async fn completions_stream(
 async fn completions(mut client: ReqInfo) -> Result<Json<Value>, AppError> {
     let mut logprobs = vec![];
     while let Some(mut result) = client.recv.recv().await {
-        log::debug!("infer response: {:?}", result.response);
+        log::trace!("infer response: {:?}", result.response);
         let response = &result.response;
         if let Some(err) = &response.error {
             let err = anyhow::anyhow!("{}", err);
@@ -660,7 +684,7 @@ pub async fn route_llguidance(
     State(app_state): State<Arc<AppState>>,
     request: Json<RunRequest>,
 ) -> Result<Response, AppError> {
-    log::info!("run request: {:?}", request);
+    log::debug!("run request: {:?}", request);
 
     let mut common: CommonCreateParams = serde_json::from_value(json!({
         "model": "model"
@@ -688,11 +712,13 @@ pub async fn route_llguidance(
 
     let chat_history = if let Some(messages) = &request.messages {
         is_chat = true;
-        app_state.chat_builder.build(messages)?
+        app_state.chat_builder.build(ChatParams {
+            messages,
+            tools: &vec![],
+        })?
     } else {
         request.prompt.clone().unwrap_or(String::new())
     };
-    log::debug!("chat history after formatting:\n{:?}", chat_history);
 
     let tokens = app_state.tokenize_with_bos(&chat_history);
     log::debug!("{}", app_state.tok_env.tok_trie().tokens_dbg(&tokens));

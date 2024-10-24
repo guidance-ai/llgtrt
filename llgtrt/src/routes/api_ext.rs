@@ -1,9 +1,10 @@
 use llguidance_parser::api::TopLevelGrammar;
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
 
 use super::openai::{
     ChatCompletion, ChatCompletionChunk, ChatCompletionMessageParams, Completion, CompletionChoice,
-    FinishReason, LogProbs,
+    FinishReason, LogProbs, Tool,
 };
 
 #[derive(Deserialize, Debug, Clone, Copy)]
@@ -131,5 +132,46 @@ impl Completion {
             choices,
             usage: chat_completion_chunk.usage,
         }
+    }
+}
+
+impl Tool {
+    pub fn to_schema(&self) -> Value {
+        match self {
+            Tool::Function { function } => {
+                let params = if function.strict == Some(true) {
+                    function.parameters.clone()
+                } else {
+                    json!({
+                        "type": "object"
+                    })
+                };
+                json!({
+                    "type": "object",
+                    "required": ["type", "name", "parameters"],
+                    "additionalProperties": false,
+                    "properties": {
+                        "type": { "const": "function" },
+                        "name": { "const": function.name.clone() },
+                        "parameters": params,
+                    }
+                })
+            }
+        }
+    }
+}
+
+pub fn tools_to_schema(tools: &Vec<Tool>) -> Value {
+    if tools.is_empty() {
+        // ???
+        json!({
+            "type": "object"
+        })
+    } else if tools.len() == 1 {
+        tools[0].to_schema()
+    } else {
+        json!({
+            "anyOf": tools.iter().map(Tool::to_schema).collect::<Vec<_>>(),
+        })
     }
 }

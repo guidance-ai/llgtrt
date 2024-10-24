@@ -189,7 +189,7 @@ extern "C" fn logits_processor(logits: *mut TlcLogitsEntry, num_logits: u32) {
             let entry = &entries[idx];
             let rd = exec.req_data.get_mut(&entry.client_req_id()).unwrap();
             let llg_idx = rd.llg_infos.len();
-            log::info!(
+            log::debug!(
                 "assigning llg: {} = {}.{}",
                 entry.req_id(),
                 entry.client_req_id(),

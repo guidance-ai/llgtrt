@@ -1,11 +1,10 @@
 use crate::{
-    routes::openai::{ChatCompletionMessageContentPart, ChatCompletionMessageParams},
+    routes::openai::{ChatCompletionMessageContentPart, ChatCompletionMessageParams, Tool},
     tokenizer::TokenizerConfig,
 };
 use anyhow::anyhow;
 use minijinja::Environment;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 const DEFAULT_TEMPLATE: &str = r#"{{- bos_token }}
 {%- for message in messages %}
@@ -30,7 +29,7 @@ struct ChatDocument {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct TemplateContext {
     messages: Vec<ChatCompletionMessageParams>,
-    tools: Option<Vec<Value>>,
+    tools: Option<Vec<Tool>>,
     documents: Option<Vec<ChatDocument>>,
     date_string: String,
     add_generation_prompt: bool,
@@ -82,25 +81,32 @@ impl ChatBuilder {
             env,
         };
         // make sure the template is valid
-        let msg = res.build(&vec![
-            ChatCompletionMessageParams::System {
-                content: Some("Be a good model".to_string()),
-                name: None,
-            },
-            ChatCompletionMessageParams::User {
-                content: ChatCompletionMessageContentPart::Text("Hello".to_string()),
-                name: None,
-            },
-        ])?;
+        let msg = res.build(ChatParams {
+            tools: &vec![],
+            messages: &vec![
+                ChatCompletionMessageParams::System {
+                    content: Some("Be a good model".to_string()),
+                    name: None,
+                },
+                ChatCompletionMessageParams::User {
+                    content: ChatCompletionMessageContentPart::Text("Hello".to_string()),
+                    name: None,
+                },
+            ],
+        })?;
         log::info!("chat template result:\n{}", msg);
         Ok(res)
     }
 
-    pub fn build(&self, messages: &Vec<ChatCompletionMessageParams>) -> anyhow::Result<String> {
+    pub fn build(&self, params: ChatParams) -> anyhow::Result<String> {
         let mut context = self.default_context.clone();
-        context.messages = messages.iter().map(|x| x.flatten()).collect();
+        context.messages = params.messages.iter().map(|x| x.flatten()).collect();
         context.date_string = date_string();
-        let context_non_null = serde_json::to_value(&context)?
+        if params.tools.len() > 0 {
+            context.tools = Some(params.tools.clone());
+        }
+        let context_non_null = serde_json::to_value(&context)
+            .unwrap()
             .as_object()
             .unwrap()
             .iter()
@@ -110,7 +116,13 @@ impl ChatBuilder {
                 }
                 acc
             });
-        let r = self.env.get_template("chat")?.render(&context_non_null)?;
+        let r = self
+            .env
+            .get_template("chat")
+            .unwrap()
+            .render(&context_non_null)
+            .map_err(|e| anyhow!("error rendering chat template: {}", e))?;
+        log::debug!("chat template result:\n{}", r);
         Ok(r)
     }
 }
@@ -135,4 +147,10 @@ impl ChatCompletionMessageParams {
             x => x.clone(),
         }
     }
+}
+
+pub struct ChatParams<'a> {
+    /// A list of messages comprising the conversation so far.
+    pub messages: &'a Vec<ChatCompletionMessageParams>,
+    pub tools: &'a Vec<Tool>,
 }
