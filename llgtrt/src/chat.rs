@@ -67,6 +67,9 @@ impl ChatBuilder {
             mask_token: config.mask_token.clone(),
         };
         let mut env = Environment::new();
+        // https://github.com/huggingface/transformers/blob/e50bf61decf741c6d59e4ba633b7392712673bda/src/transformers/utils/chat_template_utils.py#L423
+        env.set_lstrip_blocks(true);
+        env.set_trim_blocks(true);
         let template = config
             .chat_template
             .clone()
