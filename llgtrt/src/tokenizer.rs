@@ -63,6 +63,12 @@ pub fn setup_tokenizer(cli_config: &Config) -> anyhow::Result<(TokEnv, ChatBuild
             .map_err(|e| anyhow!("error applying tokenizer_config_llgtrt.json: {}", e))?;
     }
 
+    let chat_template = format!("{}/chat_template.j2", tokenizer_folder);
+    log::info!("Checking for separate chat template in {:?}", chat_template);
+    if std::fs::exists(&chat_template)? {
+        tok_cfg.chat_template = Some(std::fs::read_to_string(chat_template)?);
+    }
+
     let tokenizer = format!("{}/tokenizer.json", tokenizer_folder);
     log::info!("Loading tokenizer from {:?}", tokenizer);
     let tok_env = toktrie_hf_tokenizers::ByteTokenizerEnv::from_name(&tokenizer, None)?;
