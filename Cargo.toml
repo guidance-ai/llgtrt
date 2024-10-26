@@ -4,6 +4,7 @@ members = [
     "llgtrt",
     "llguidance/parser",
     "llguidance/sample_parser",
+    "llguidance/rust",
     "toktrie/core",
     "toktrie/hf_tokenizers",
     "derivre",

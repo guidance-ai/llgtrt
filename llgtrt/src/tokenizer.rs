@@ -76,7 +76,7 @@ pub fn setup_tokenizer(cli_config: &Config) -> anyhow::Result<(TokEnv, ChatBuild
     let trie = tok_env.tok_trie();
     let mut info = trie.info().clone();
 
-    let toks = tok_env.tokenize(&tok_cfg.eos_token);
+    let toks = tok_env.tokenize_special(&tok_cfg.eos_token);
     ensure!(
         toks.len() == 1,
         "tokenizer_config.json -> eos_token ({:?}) must tokenize to a single token",
@@ -86,7 +86,7 @@ pub fn setup_tokenizer(cli_config: &Config) -> anyhow::Result<(TokEnv, ChatBuild
 
     info.tok_bos = None;
     if let Some(s) = &tok_cfg.bos_token {
-        let toks = tok_env.tokenize(s);
+        let toks = tok_env.tokenize_special(s);
         ensure!(
             toks.len() == 1,
             "tokenizer_config.json -> bos_token ({:?}) must tokenize to a single token",

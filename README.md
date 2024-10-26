@@ -127,7 +127,7 @@ which has similar aims, but uses NVidia Triton Server wrapping TensorRT-LLM.
 - [x] don't use this by default: Capacity Scheduler Policy: GUARANTEED_NO_EVICT
 - [x] add script for mpirun auto-detecting engine size
 - [ ] multi-LoRA?
-- [ ] text template for JSON schema (Please follow this schema: ...)
+- [x] text template for JSON schema (Please follow this schema: ...)
 - [x] test with TP=4
 - [ ] test phi-3.5
 - [ ] multi-modal input
@@ -136,3 +136,5 @@ which has similar aims, but uses NVidia Triton Server wrapping TensorRT-LLM.
 - [ ] logprobs
 - [ ] logprobs with argmax sampling and constraints
 - [ ] expose the 'surprise' measure somehow
+- [x] for tools, right now it forces a tool - we want to allow either message or tool
+- [ ] we use `<|python_tag|>` which is llama 3.1 specific; make it configurable

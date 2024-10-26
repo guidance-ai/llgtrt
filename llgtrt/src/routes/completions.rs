@@ -7,8 +7,8 @@ use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 use futures_core::Stream;
-use llguidance_parser::api::TopLevelGrammar;
-use llguidance_parser::{Constraint, JsonCompileOptions};
+use llguidance_parser::api::{RegexSpec, TopLevelGrammar};
+use llguidance_parser::{Constraint, GrammarBuilder, JsonCompileOptions};
 use serde_json::{json, Value};
 use std::fmt::Display;
 use std::sync::Arc;
@@ -312,6 +312,24 @@ pub async fn route_chat_completions(
         let schema = tools_to_schema(&request.tools);
         log::debug!("tools schema: {}", serde_json::to_string_pretty(&schema)?);
         let grammar = json_to_llg(&schema)?;
+        let (mut builder, prev_root) = GrammarBuilder::from_grammar(grammar);
+        // TODO this is specific to llama 3.1
+        let tool_tag = builder.special_token("<|python_tag|>");
+        let schema_option = builder.join(&[tool_tag, prev_root]);
+        let free_flow_option = builder.lexeme(RegexSpec::Regex("(\n|.)*".to_string()), false);
+        let new_root = match &request.tool_choice {
+            ToolChoice::Simple(ToolChoiceOption::None) => builder.select(&[free_flow_option]),
+            ToolChoice::Simple(ToolChoiceOption::Auto) => {
+                builder.select(&[schema_option, free_flow_option])
+            }
+            ToolChoice::Simple(ToolChoiceOption::Required) | ToolChoice::Advanced(_) => {
+                builder.select(&[schema_option])
+            }
+        };
+        builder.set_start_node(new_root);
+        let grammar = builder.finalize()?;
+
+        log::debug!("tools grammar: {}", serde_json::to_string_pretty(&grammar)?);
         request.params.response_format = Some(ResponseFormat::Llguidance { grammar });
     }
 
