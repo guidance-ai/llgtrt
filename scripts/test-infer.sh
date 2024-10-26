@@ -146,6 +146,11 @@ curl -v -X POST "${TRT_API_BASE}chat/completions" \
 }'
 ;;
 
+  *.json)
+curl -X POST "${TRT_API_BASE}chat/completions" \
+-H "Content-Type: application/json" -v -d @"$1" | jq
+;;
+
 esac
 
 echo

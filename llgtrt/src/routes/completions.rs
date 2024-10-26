@@ -22,7 +22,7 @@ use crate::chat::ChatParams;
 use crate::constraint_mgr::ConstraintInit;
 use crate::error::AppError;
 use crate::routes::api_ext::{tools_to_schema, LlgLogLevel};
-use crate::routes::openai::{ResponseFormat, ToolChoice};
+use crate::routes::openai::{JsonSchemaOptions, ResponseFormat, ToolChoice};
 use crate::state::AppState;
 
 use super::api_ext::{
@@ -79,7 +79,9 @@ fn req_params_from_openai(params: &CommonCreateParams) -> Result<RequestParams> 
         "logprobs > 1 not supported yet"
     );
     match &params.response_format {
-        Some(ResponseFormat::JsonSchema { name: Some(n), .. }) => {
+        Some(ResponseFormat::JsonSchema {
+            json_schema: JsonSchemaOptions { name: Some(n), .. },
+        }) => {
             ensure!(
                 n.chars()
                     .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-'),
@@ -143,21 +145,33 @@ fn llg_grammar(params: &CommonCreateParams) -> Result<Option<TopLevelGrammar>> {
     let grm = match &params.response_format {
         Some(ResponseFormat::Llguidance { grammar }) => grammar.clone(),
         Some(ResponseFormat::JsonObject)
-        | Some(ResponseFormat::JsonSchema { strict: false, .. }) => {
+        | Some(ResponseFormat::JsonSchema {
+            json_schema: JsonSchemaOptions { strict: false, .. },
+        }) => {
+            log::debug!("using generic JSON schema");
             json_to_llg(&json!({ "type": "object" }))?
         }
         Some(ResponseFormat::JsonSchema {
-            schema: None,
-            strict: true,
-            ..
+            json_schema:
+                JsonSchemaOptions {
+                    schema: None,
+                    strict: true,
+                    ..
+                },
         }) => {
             bail!("missing schema in strict mode")
         }
         Some(ResponseFormat::JsonSchema {
-            schema: Some(schema),
-            strict: true,
-            ..
-        }) => json_to_llg(schema)?,
+            json_schema:
+                JsonSchemaOptions {
+                    schema: Some(schema),
+                    strict: true,
+                    ..
+                },
+        }) => {
+            log::debug!("using strict JSON schema");
+            json_to_llg(schema)?
+        }
         _ => return Ok(None),
     };
     Ok(Some(grm))

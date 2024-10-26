@@ -244,7 +244,7 @@ impl Default for ChatCompletionMessageContentPart {
 #[serde(tag = "role", rename_all = "lowercase")]
 pub enum ChatCompletionMessageParams {
     System {
-        content: Option<String>,
+        content: ChatCompletionMessageContentPart,
         name: Option<String>,
     },
     User {
@@ -267,21 +267,22 @@ pub enum ChatCompletionMessageParams {
 pub enum ResponseFormat {
     Text,
     JsonObject,
-    JsonSchema {
-        /// The name of the response format. Must be a-z, A-Z, 0-9, or contain underscores and dashes, with a maximum length of 64.
-        name: Option<String>,
-        /// A description of what the response format is for, used by the model to determine how to respond in the format.
-        #[allow(dead_code)]
-        description: Option<String>,
-        /// The schema for the response format, described as a JSON Schema object.
-        schema: Option<serde_json::Value>,
-        /// Whether to enable strict schema adherence when generating the output. If set to true, the model will always follow the exact schema defined in the schema field. Only a subset of JSON Schema is supported when strict is true.
-        #[serde(default)]
-        strict: bool,
-    },
-    Llguidance {
-        grammar: TopLevelGrammar,
-    },
+    JsonSchema { json_schema: JsonSchemaOptions },
+    Llguidance { grammar: TopLevelGrammar },
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct JsonSchemaOptions {
+    /// The name of the response format. Must be a-z, A-Z, 0-9, or contain underscores and dashes, with a maximum length of 64.
+    pub name: Option<String>,
+    /// A description of what the response format is for, used by the model to determine how to respond in the format.
+    #[allow(dead_code)]
+    pub description: Option<String>,
+    /// The schema for the response format, described as a JSON Schema object.
+    pub schema: Option<serde_json::Value>,
+    /// Whether to enable strict schema adherence when generating the output. If set to true, the model will always follow the exact schema defined in the schema field. Only a subset of JSON Schema is supported when strict is true.
+    #[serde(default)]
+    pub strict: bool,
 }
 
 #[derive(Serialize, Debug)]

@@ -85,7 +85,7 @@ impl ChatBuilder {
             tools: &vec![],
             messages: &vec![
                 ChatCompletionMessageParams::System {
-                    content: Some("Be a good model".to_string()),
+                    content: ChatCompletionMessageContentPart::Text("Be a good model".to_string()),
                     name: None,
                 },
                 ChatCompletionMessageParams::User {
@@ -127,23 +127,41 @@ impl ChatBuilder {
     }
 }
 
+impl ChatCompletionMessageContentPart {
+    pub fn flatten(&self) -> ChatCompletionMessageContentPart {
+        match self {
+            ChatCompletionMessageContentPart::Text(s) => {
+                ChatCompletionMessageContentPart::Text(s.clone())
+            }
+            ChatCompletionMessageContentPart::ContentParts(parts) => {
+                ChatCompletionMessageContentPart::Text(
+                    parts
+                        .iter()
+                        .map(|x| x.text.clone())
+                        .collect::<Vec<_>>()
+                        .join("\n"),
+                )
+            }
+        }
+    }
+}
+
 impl ChatCompletionMessageParams {
     // HF templates generally don't support multiple content parts, so we flatten them here
     pub fn flatten(&self) -> Self {
         match self {
-            ChatCompletionMessageParams::User {
-                content: ChatCompletionMessageContentPart::ContentParts(parts),
-                name,
-            } => ChatCompletionMessageParams::User {
-                content: ChatCompletionMessageContentPart::Text(
-                    parts
-                        .iter()
-                        .map(|part| part.text.clone())
-                        .collect::<Vec<_>>()
-                        .join("\n"),
-                ),
-                name: name.clone(),
-            },
+            ChatCompletionMessageParams::User { content, name } => {
+                ChatCompletionMessageParams::User {
+                    content: content.flatten(),
+                    name: name.clone(),
+                }
+            }
+            ChatCompletionMessageParams::System { content, name } => {
+                ChatCompletionMessageParams::System {
+                    content: content.flatten(),
+                    name: name.clone(),
+                }
+            }
             x => x.clone(),
         }
     }
