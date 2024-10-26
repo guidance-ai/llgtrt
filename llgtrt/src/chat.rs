@@ -162,7 +162,22 @@ impl ChatCompletionMessageParams {
                     name: name.clone(),
                 }
             }
-            x => x.clone(),
+            ChatCompletionMessageParams::Assistant {
+                content,
+                name,
+                tool_calls,
+            } => ChatCompletionMessageParams::Assistant {
+                content: content.as_ref().map(|x| x.flatten()),
+                name: name.clone(),
+                tool_calls: tool_calls.clone(),
+            },
+            ChatCompletionMessageParams::Tool {
+                content,
+                tool_call_id,
+            } => ChatCompletionMessageParams::Tool {
+                content: content.as_ref().map(|x| x.flatten()),
+                tool_call_id: tool_call_id.clone(),
+            },
         }
     }
 }

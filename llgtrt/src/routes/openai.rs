@@ -252,12 +252,12 @@ pub enum ChatCompletionMessageParams {
         name: Option<String>,
     },
     Assistant {
-        content: Option<String>,
+        content: Option<ChatCompletionMessageContentPart>,
         name: Option<String>,
         tool_calls: Option<Vec<serde_json::Value>>,
     },
     Tool {
-        content: Option<String>,
+        content: Option<ChatCompletionMessageContentPart>,
         tool_call_id: String,
     },
 }
