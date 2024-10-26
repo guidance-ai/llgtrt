@@ -126,19 +126,21 @@ curl -v -X POST "${TRT_API_BASE}chat/completions" \
   ],
   "response_format": {
     "type": "json_schema",
-    "strict": true,
-    "schema": {
-      "type": "object",
-      "properties": {
-        "joke": {
-          "type": "string"
+    "json_schema": {
+      "strict": true,
+      "schema": {
+        "type": "object",
+        "properties": {
+          "joke": {
+            "type": "string"
+          },
+          "rating": {
+            "type": "number"
+          }
         },
-        "rating": {
-          "type": "number"
-        }
-      },
-      "additionalProperties": false,
-      "required": ["joke", "rating"]
+        "additionalProperties": false,
+        "required": ["joke", "rating"]
+      }
     }
   },
   "max_tokens": 100,
