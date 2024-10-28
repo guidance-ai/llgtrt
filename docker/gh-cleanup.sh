@@ -23,7 +23,7 @@ FOLDERS="
 
 for folder in $FOLDERS ; do
     echo "Cleaning up $folder"
-    rm -rf $folder
+    sudo rm -rf $folder
     df /
 done
 
