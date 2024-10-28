@@ -5,6 +5,7 @@ use crate::{
 use anyhow::anyhow;
 use minijinja::Environment;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 const DEFAULT_TEMPLATE: &str = r#"{{- bos_token }}
 {%- for message in messages %}
@@ -46,6 +47,19 @@ struct TemplateContext {
 fn date_string() -> String {
     // 3 October 2024
     chrono::Utc::now().format("%e %B %Y").to_string()
+}
+
+fn remove_null(v: &mut Value) {
+    if let Some(map) = v.as_object_mut() {
+        for (_, v) in map.iter_mut() {
+            remove_null(v);
+        }
+        map.retain(|_, v| !v.is_null());
+    }
+    // remove empty arrays
+    if let Some(arr) = v.as_array_mut() {
+        arr.iter_mut().for_each(remove_null);
+    }
 }
 
 impl ChatBuilder {
@@ -105,22 +119,13 @@ impl ChatBuilder {
         if params.tools.len() > 0 {
             context.tools = Some(params.tools.clone());
         }
-        let context_non_null = serde_json::to_value(&context)
-            .unwrap()
-            .as_object()
-            .unwrap()
-            .iter()
-            .fold(serde_json::Map::new(), |mut acc, (k, v)| {
-                if !v.is_null() {
-                    acc.insert(k.clone(), v.clone());
-                }
-                acc
-            });
+        let mut context = serde_json::to_value(&context)?;
+        remove_null(&mut context);
         let r = self
             .env
             .get_template("chat")
             .unwrap()
-            .render(&context_non_null)
+            .render(&context)
             .map_err(|e| anyhow!("error rendering chat template: {}", e))?;
         log::debug!("chat template result:\n{}", r);
         Ok(r)

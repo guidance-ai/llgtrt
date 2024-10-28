@@ -72,6 +72,21 @@ curl -X POST "${TRT_API_BASE}chat/completions" \
 }' | jq
 ;;
 
+  chat2)
+  curl -X POST "${TRT_API_BASE}chat/completions" \
+  -H "Content-Type: application/json" -v \
+  -d '{
+     "model": "model",
+     "messages": [
+        {"role": "system", "content": "System Message 1"},
+        {"role": "user", "content": "Help me"},
+        {"role": "assistant", "content": "What do you need?"},
+        {"role": "system", "content": "System Message 2"}      
+      ],
+     "temperature": 0.7
+   }'
+   ;;
+
   tools)
 curl -X POST "${TRT_API_BASE}chat/completions" \
 -H "Content-Type: application/json" -v \
