@@ -1,0 +1,26 @@
+name: Docker image
+
+on:
+  push:
+    branches:
+      - 'main'
+    tags:
+      - 'v*'  # version tags
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+
+    - run: df -h
+    - run: sudo rm -rf /usr/share/dotnet && df -h
+    - run: sudo rm -rf /usr/local/lib/android && df -h
+    - run: sudo rm -rf /opt/ghc && df -h
+    - run: sudo rm -rf /opt/hostedtoolcache/CodeQL && df -h
+    # - run: sudo docker image prune --all --force && df -h
+
+    - run: ./docker/build.sh
