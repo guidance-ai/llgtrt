@@ -24,25 +24,34 @@ nvidia-docker runtime.
 
 Overview of steps:
 
-- build `llgtrt_prod` docker container
+- build or pull `llgtrt/llgtrt` docker container
 - build a trtllm engine (likely using the container)
 - create configuration files
 - use the container to run the engine
 
-### Building the Docker Container
+### Building or Pulling Docker Container
 
-The build script will initialize submodules if missing.
+To use a pre-built container, run:
+
+```bash
+docker pull llgtrt/llgtrt
+```
+
+To build a container use:
 
 ```bash
 ./docker/build.sh
 ```
 
+The build script will initialize submodules if missing.
+It takes about 15 minutes on a GitHub runner, should be typically faster on a local machine.
+
 ### Building the TensorRT-LLM Engine
 
 This is following 
 [TensorRT-LLM Quick-start](https://nvidia.github.io/TensorRT-LLM/quick-start-guide.html),
-adjusted for running in the `llgtrt_prod` container.
-First, use the `llgtrt_prod` container to run bash.
+adjusted for running in the `llgtrt/llgtrt` container.
+First, use the `llgtrt/llgtrt` container to run bash.
 
 ```bash
 ./docker/bash.sh --volume /path/to/hf-models:/models
@@ -110,7 +119,7 @@ or on command line.
 
 First build the Docker container to be used in the dev container.
 If you had already followed steps above, you can skip this.
-Otherwise, run `./docker/build.sh llgtrt_dev`
+Otherwise, run `./docker/build.sh`
 
 Next, in VSCode re-open the folder in container.
 

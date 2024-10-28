@@ -24,9 +24,7 @@ jobs:
 
     - run: ./docker/gh-cleanup.sh
 
-    - run: ./docker/build.sh llgtrt_dev
-  
-    - run: ./docker/build.sh llgtrt_prod
+    - run: ./docker/build.sh
   
     - run: ./docker/push.sh ${{ vars.DOCKERHUB_USERNAME }}/llgtrt
       if: startsWith(github.ref, 'refs/tags/v')

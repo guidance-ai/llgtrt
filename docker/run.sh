@@ -24,7 +24,7 @@ cd $(dirname $0)/..
 ./docker/drun.sh \
     --volume "$ENGINE":/engine \
     --publish $PORT:$PORT \
-    llgtrt_prod \
+    llgtrt/llgtrt:latest \
     /usr/local/bin/launch-llgtrt.sh \
         /engine \
         --port $PORT \

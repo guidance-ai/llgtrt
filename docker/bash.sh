@@ -1,4 +1,4 @@
 #!/bin/sh
 
 cd $(dirname $0)/..
-./docker/drun.sh "$@" llgtrt_prod /bin/bash -l
+./docker/drun.sh "$@" llgtrt/llgtrt:latest /bin/bash -l
