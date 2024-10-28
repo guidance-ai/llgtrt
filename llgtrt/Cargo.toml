@@ -21,5 +21,5 @@ rand = "0.8.5"
 llguidance_parser = { path = "../llguidance/parser" }
 rayon = "1.10.0"
 futures-core = "0.3.30"
-minijinja = { version = "2.3.1", features = ["preserve_order", "json", "loop_controls", "loader"] }
+minijinja = { version = "2.3.1", features = ["preserve_order", "loop_controls", "loader"] }
 chrono = "0.4.38"

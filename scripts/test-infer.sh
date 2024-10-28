@@ -86,6 +86,18 @@ curl -X POST "${TRT_API_BASE}chat/completions" \
      "temperature": 0.7
    }'
    ;;
+  
+  exn)
+  curl -X POST "${TRT_API_BASE}chat/completions" \
+  -H "Content-Type: application/json" -v \
+  -d '{
+     "model": "model",
+     "messages": [
+        {"role": "assistant", "content": "What do you need?", "tool_calls": [{}, {}]}
+      ],
+     "temperature": 0.7
+   }'
+   ;;
 
   tools)
 curl -X POST "${TRT_API_BASE}chat/completions" \
@@ -108,7 +120,7 @@ curl -X POST "${TRT_API_BASE}chat/completions" \
     "type": "function",
     "function": {
       "name": "weather",
-      "description": "Get the weather for a location",
+      "description": "Get the weather for a <location>",
       "strict": true,
       "parameters": {
          "type": "object",

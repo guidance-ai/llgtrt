@@ -3,9 +3,8 @@ use crate::{
     tokenizer::TokenizerConfig,
 };
 use anyhow::anyhow;
-use minijinja::Environment;
+use minijinja::{value::Kwargs, Environment, Error, ErrorKind, Value};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 const DEFAULT_TEMPLATE: &str = r#"{{- bos_token }}
 {%- for message in messages %}
@@ -49,7 +48,7 @@ fn date_string() -> String {
     chrono::Utc::now().format("%e %B %Y").to_string()
 }
 
-fn remove_null(v: &mut Value) {
+fn remove_null(v: &mut serde_json::Value) {
     if let Some(map) = v.as_object_mut() {
         for (_, v) in map.iter_mut() {
             remove_null(v);
@@ -60,6 +59,28 @@ fn remove_null(v: &mut Value) {
     if let Some(arr) = v.as_array_mut() {
         arr.iter_mut().for_each(remove_null);
     }
+}
+
+fn tojson(value: Value, args: Kwargs) -> Result<Value, Error> {
+    let indent = match args.get::<usize>("indent") {
+        Ok(val) => val,
+        Err(_) => 4,
+    };
+    args.assert_all_used()?;
+    let mut out = Vec::<u8>::new();
+    let indentation = " ".repeat(indent);
+    let formatter = serde_json::ser::PrettyFormatter::with_indent(indentation.as_bytes());
+    let mut s = serde_json::Serializer::with_formatter(&mut out, formatter);
+    let v = serde::Serialize::serialize(&value, &mut s)
+        .map(|_| unsafe { String::from_utf8_unchecked(out) })
+        .map_err(|err| {
+            Error::new(ErrorKind::InvalidOperation, "cannot serialize to JSON").with_source(err)
+        })?;
+    Ok(Value::from_safe_string(v))
+}
+
+fn strftime_now(format: &str) -> String {
+    chrono::Utc::now().format(format).to_string()
 }
 
 impl ChatBuilder {
@@ -83,6 +104,12 @@ impl ChatBuilder {
         // https://github.com/huggingface/transformers/blob/e50bf61decf741c6d59e4ba633b7392712673bda/src/transformers/utils/chat_template_utils.py#L423
         env.set_lstrip_blocks(true);
         env.set_trim_blocks(true);
+        env.add_function("raise_exception", |msg: String| {
+            let e = minijinja::Error::new(minijinja::ErrorKind::InvalidOperation, msg);
+            Err::<minijinja::Value, _>(e)
+        });
+        env.add_function("strftime_now", strftime_now);
+        env.add_filter("tojson", tojson);
         let template = config
             .chat_template
             .clone()
