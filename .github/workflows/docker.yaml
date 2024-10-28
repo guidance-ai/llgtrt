@@ -42,3 +42,4 @@ jobs:
     - run: ./docker/build.sh
   
     - run: ./docker/push.sh ${{ secrets.DOCKERHUB_USERNAME }}/llgtrt
+      if: startsWith(github.ref, 'refs/tags/v')
