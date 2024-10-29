@@ -4,7 +4,7 @@ This project demonstrates how to use
 [llguidance library](https://github.com/microsoft/llguidance)
 for constrained output with
 [NVIDIA TensorRT-LLM](https://github.com/NVIDIA/TensorRT-LLM),
-implementing a REST server compatible with 
+implementing a REST server compatible with
 [OpenAI APIs](https://platform.openai.com/docs/api-reference/introduction).
 
 The server supports regular completions and chat endpoints
@@ -48,7 +48,7 @@ It takes about 15 minutes on a GitHub runner, should be typically faster on a lo
 
 ### Building the TensorRT-LLM Engine
 
-This is following 
+This is following
 [TensorRT-LLM Quick-start](https://nvidia.github.io/TensorRT-LLM/quick-start-guide.html),
 adjusted for running in the `llgtrt/llgtrt` container.
 First, use the `llgtrt/llgtrt` container to run bash.
@@ -84,7 +84,7 @@ cp /models/Meta-Llama-3.1-8B-Instruct/tokenizer_config.json /models/model-engine
 exit
 ```
 
-Make sure to modify the path to the input model (it needs to contain the 
+Make sure to modify the path to the input model (it needs to contain the
 HF Transformers `config.json` as well as the `.safetensors` files and
 `tokenizer.json`).
 If you're running on more than one 1 GPU, modify the `--tp_size` argument.
@@ -99,34 +99,41 @@ The command will print out the actual `docker run` invocation on first line
 if you want to invoke it directly later.
 `PORT` defaults to 3000.
 
-### Update configuration
+### Update Configuration (optional)
 
-You can pass additional arguments after the engine path.
-Try running `./docker/run.sh /path/to/hf-models/model-engine --help` for more info.
-Most of the options are specified in configuration files,
-but which configuration files are used can be modified with command line arguments.
+The defaults should be mostly reasonable, but you can modify them.
+First, generate a template configuration file:
 
-By default, llgtrt will use chat template from `tokenizer_config.json`.
+```bash
+./docker/run.sh /path/to/hf-models/model-engine --print-config > llgtrt.json5
+```
 
-If present, it will also read `tokenizer_config_llgtrt.json` from the same directory
-and apply any keys from it to `tokenizer_config.json`.
-Afterwards, if `chat_template.j2` file is found, it will be used as the chat template.
+The file will contain commented out defaults for all supported options
+(JSON5 is a superset of JSON, so you can use comments).
+Edit it, and move to the engine folder.
 
-You can also modify TensortRT-LLM's runtime configuration with `runtime.json` file
-and `llguidance_parser` configuration with `llguidance.json`.
-This is optional, see below.
+To modify the chat template, you can either use `--print-complete-config`
+above which will include the chat template from `tokenizer_config.json`,
+or preferably create a separate `chat_template.j2` file in the engine folder:
 
+```bash
+./docker/run.sh /path/to/hf-models/model-engine --print-chat-template > chat_template.j2
+mv chat_template.j2 /path/to/hf-models/model-engine
+```
 
+The paths to `llgtrt.json5` and `chat_template.j2` are controlled by command
+line arguments, see `--help` for more info:
 
-The `--help` has up-to-date info on `runtime.json` file -
-the options can be specified either in these files (replace `-` with `_`)
-or on command line.
+```bash
+./docker/run.sh /path/to/hf-models/model-engine --help
+```
 
-The `llguidance.json` file contains `ParserLimits` structure
-under `limits` key (defaults should be generally good)
-and `log_level`, defaulting to `1` (warnings only);
-set it to `2` for debug logging from the parser
-or `0` to disable warnings.
+You can even specify several JSON5 config files, and they will be merged
+in the order they are specified (with later ones overriding the earlier ones).
+This way, you can separate configuration for tokenizer, runtime, and guidance parser.
+
+You can enable additional logging for llguidance by setting `llguidance.log_level` to `2`
+in the configuration file.
 
 ## Development
 

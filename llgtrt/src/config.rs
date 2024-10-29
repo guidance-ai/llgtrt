@@ -8,6 +8,8 @@ pub fn config_info() -> serde_json::Value {
     serde_json::from_str(CONFIG_INFO).unwrap()
 }
 
+const CONFIG_OPTIONS: &str = "Configuration files handling";
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TrtLlmRuntimeConfig {
     /// Make the scheduler more conservative, so that a started request is never evicted.
@@ -56,7 +58,7 @@ impl Default for TrtLlmRuntimeConfig {
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct LlgTrtConfig {
     /// TensorRT-LLM runtime parameters
-    /// Defaults should be reasonable, otherwise see 
+    /// Defaults should be reasonable, otherwise see
     /// https://nvidia.github.io/TensorRT-LLM/performance/perf-best-practices.html
     pub runtime: TrtLlmRuntimeConfig,
 
@@ -87,24 +89,6 @@ pub struct CliConfig {
     #[arg(long, short = 'T')]
     pub tokenizer: Option<String>,
 
-    /// Path to JSON5 configuration file; multiple files are JSON-merged in order; defaults to:
-    /// <engine>/llgtrt.json5 if it exists
-    #[arg(long, short = 'C')]
-    pub config: Vec<String>,
-
-    /// Path to chat template file; defaults to <engine>/chat_template.j2 if it exists
-    /// Overrides values in all configs.
-    #[arg(long)]
-    pub chat_template: Option<String>,
-
-    /// When present, save the merged configuration to this file and exit; use '-' for stdout
-    #[arg(long)]
-    pub save_config: Option<String>,
-
-    /// Similar to --save-config, but includes chat template and tokenizer config
-    #[arg(long)]
-    pub save_complete_config: Option<String>,
-
     /// Debug output
     #[arg(long, short = 'd')]
     pub debug: bool,
@@ -117,4 +101,26 @@ pub struct CliConfig {
     #[arg(long)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub api_key: Option<String>,
+
+    /// Path to JSON5 configuration file; multiple files are JSON-merged in order; defaults to:
+    /// <engine>/llgtrt.json5 if it exists
+    #[arg(long, short = 'C', help_heading = CONFIG_OPTIONS)]
+    pub config: Vec<String>,
+
+    /// Path to chat template file; defaults to <engine>/chat_template.j2 if it exists
+    /// Overrides values in all configs.
+    #[arg(long, help_heading = CONFIG_OPTIONS)]
+    pub chat_template: Option<String>,
+
+    /// Print the merged configuration and exit
+    #[arg(long, help_heading = CONFIG_OPTIONS)]
+    pub print_config: bool,
+
+    /// Similar to --print-config, but includes chat template and tokenizer config
+    #[arg(long, help_heading = CONFIG_OPTIONS)]
+    pub print_complete_config: bool,
+
+    /// Print the chat template and exit
+    #[arg(long, help_heading = CONFIG_OPTIONS)]
+    pub print_chat_template: bool,
 }

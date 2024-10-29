@@ -57,7 +57,7 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
 
     let mut config = LlgTrtConfig::default();
 
-    if cli_config.save_config.is_some() {
+    if cli_config.print_config {
         log::info!("Skipping tokenizer config load");
     } else {
         let tokenizer_folder = cli_config.tokenizer.as_ref().unwrap_or(&cli_config.engine);
@@ -81,7 +81,7 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
     let mut config: LlgTrtConfig =
         serde_json::from_value(config).map_err(|e| anyhow!("Error interpreting config: {}", e))?;
 
-    if cli_config.save_config.is_some() {
+    if cli_config.print_config {
         log::info!("Skipping separate chat template load");
     } else {
         let chat_template = cli_config
@@ -94,23 +94,24 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
         }
     }
 
-    if let Some(filename) = cli_config
-        .save_config
-        .as_ref()
-        .or(cli_config.save_complete_config.as_ref())
-    {
+    if cli_config.print_config || cli_config.print_complete_config {
         let r = json5_to_string(
             &serde_json::to_value(&config)?,
             &serde_json::to_value(&LlgTrtConfig::default())?,
             &config_info(),
         );
-        if filename == "-" {
-            log::info!("Printing merged config to stdout");
-            println!("{}", r);
-        } else {
-            log::info!("Saving merged config to {}", filename);
-            std::fs::write(filename, r)?;
+        log::info!("Printing merged config to stdout");
+        println!("{}", r);
+        return Ok(());
+    }
+
+    if cli_config.print_chat_template {
+        log::info!("Printing chat template to stdout");
+        if config.tokenizer.chat_template.is_none() {
+            log::warn!("No chat template found");
+            return Ok(());
         }
+        print!("{}", config.tokenizer.chat_template.as_ref().unwrap());
         return Ok(());
     }
 
