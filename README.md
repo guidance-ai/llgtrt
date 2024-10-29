@@ -94,10 +94,11 @@ If you're running on more than one 1 GPU, modify the `--tp_size` argument.
 By default, llgtrt will use chat template from `tokenizer_config.json`.
 If present, it will also read `tokenizer_config_llgtrt.json` from the same directory
 and apply any keys from it to `tokenizer_config.json`.
+Afterwards, if `chat_template.j2` file is found, it will be used as the chat template.
 
 You can also modify TensortRT-LLM's runtime configuration with `runtime.json` file
 and `llguidance_parser` configuration with `llguidance.json`.
-TODO add more docs
+This is optional, see below.
 
 ### Running the Engine
 
@@ -111,9 +112,15 @@ if you want to invoke it directly later.
 
 You can pass additional arguments after the engine path.
 Try running `./docker/run.sh /path/to/hf-models/model-engine --help` for more info.
-The `--help` has up-to-date info on `chat.json` and `runtime.json` files -
+The `--help` has up-to-date info on `runtime.json` file -
 the options can be specified either in these files (replace `-` with `_`)
 or on command line.
+
+The `llguidance.json` file contains `ParserLimits` structure
+under `limits` key (defaults should be generally good)
+and `log_level`, defaulting to `1` (warnings only);
+set it to `2` for debug logging from the parser
+or `0` to disable warnings.
 
 ## Development
 
