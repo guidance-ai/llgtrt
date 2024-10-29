@@ -2,12 +2,12 @@ use std::env;
 
 use clap::Parser;
 
-use llgtrt::config::Config;
+use llgtrt::config::CliConfig;
 use llgtrt::startup;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let config = Config::parse();
+    let config = CliConfig::parse();
 
     if config.debug {
         env::set_var("RUST_LOG", "debug,tokenizers=error");

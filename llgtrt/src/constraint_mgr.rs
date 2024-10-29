@@ -13,7 +13,16 @@ pub struct LlgConfig {
     pub limits: ParserLimits,
 
     /// Log level which goes to stderr. In-memory logs per-sequence are managed by ConstraintInit.log_level.
-    pub log_level: Option<u32>,
+    pub log_level: u32,
+}
+
+impl Default for LlgConfig {
+    fn default() -> Self {
+        Self {
+            limits: ParserLimits::default(),
+            log_level: 1,
+        }
+    }
 }
 
 pub struct ConstraintInit {
@@ -31,23 +40,7 @@ pub struct ConstraintMgr {
 }
 
 impl ConstraintMgr {
-    pub fn new(
-        tok_env: TokEnv,
-        chat_tok_env: TokEnv,
-        mut config: serde_json::Value,
-    ) -> Result<Self> {
-        let defl_limits = serde_json::to_value(ParserLimits::default()).unwrap();
-        if let Some(obj) = config["limits"].as_object_mut() {
-            for (k, v) in defl_limits.as_object().unwrap() {
-                if !obj.contains_key(k) {
-                    obj.insert(k.clone(), v.clone());
-                }
-            }
-        } else {
-            config["limits"] = defl_limits;
-        }
-        let config: LlgConfig = serde_json::from_value(config)?;
-
+    pub fn new(tok_env: TokEnv, chat_tok_env: TokEnv, config: &LlgConfig) -> Result<Self> {
         Ok(ConstraintMgr {
             tok_env,
             chat_tok_env,
@@ -56,8 +49,8 @@ impl ConstraintMgr {
                 backtrack: false, // unlikely
                 ..Default::default()
             },
-            parser_limits: config.limits,
-            log_stderr_level: config.log_level.unwrap_or(1),
+            parser_limits: config.limits.clone(),
+            log_stderr_level: config.log_level,
         })
     }
 

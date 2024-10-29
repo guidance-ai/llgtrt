@@ -1,6 +1,6 @@
-use std::fmt::Debug;
 use std::sync::Arc;
 
+use anyhow::anyhow;
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use axum::middleware::{self, Next};
@@ -10,10 +10,11 @@ use axum::Router;
 use trtllm_rs::{ClientReqId, ExecutorInit, RequestInit, RequestParams};
 
 use crate::async_exec::AsyncExecutor;
-use crate::config::{Config, TrtLlmRuntimeConfig};
+use crate::config::{config_info, CliConfig, LlgTrtConfig};
 use crate::constraint_mgr::ConstraintMgr;
-use crate::routes;
+use crate::jsonutil::json5_to_string;
 use crate::state::AppState;
+use crate::{jsonutil, routes};
 
 async fn auth_middleware(
     req: Request<Body>,
@@ -34,65 +35,96 @@ async fn auth_middleware(
     }
 }
 
-fn load_config_file<T>(
-    name0: &Option<String>,
-    default_name: String,
-    cli_args: serde_json::Value,
-) -> anyhow::Result<T>
-where
-    T: serde::de::DeserializeOwned + Debug,
-{
-    let name = name0.as_ref().unwrap_or(&default_name);
-    let mut json: serde_json::Value = if name0.is_some() || std::fs::exists(name).unwrap_or(false) {
-        log::info!("Loading config from {}", name);
-        let s = std::fs::read_to_string(name)?;
-        serde_json::from_str(&s)?
-    } else {
-        log::info!("Config file {} not found, using defaults", name);
-        serde_json::json!({})
-    };
-
-    for (k, v) in cli_args.as_object().unwrap() {
-        if v.is_null() {
-            continue;
-        }
-        json.as_object_mut().unwrap().insert(k.clone(), v.clone());
-    }
-
-    let r = serde_json::from_value(json)
-        .map_err(|e| anyhow::anyhow!("Error parsing config file {}: {}", name, e))?;
-    log::info!("Loaded config: {:?}", r);
-    Ok(r)
-}
-
-pub async fn run_server(cli_config: Config) -> anyhow::Result<()> {
+pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
     let mut exec_config = ExecutorInit {
         engine_path: cli_config.engine.clone(),
         logits_callback: None,
         trt_params: Default::default(),
     };
 
-    let runtime_config: TrtLlmRuntimeConfig = load_config_file(
-        &cli_config.runtime_config,
-        format!("{}/runtime.json", cli_config.engine),
-        serde_json::to_value(&cli_config.runtime_config_inline)?,
-    )?;
+    let defl_config_path = format!("{}/llgtrt.json5", cli_config.engine);
+    if cli_config.config.is_empty() {
+        if std::fs::exists(&defl_config_path).unwrap_or(false) {
+            log::info!("Using default config file {}", defl_config_path);
+            cli_config.config.push(defl_config_path);
+        } else {
+            log::info!(
+                "No config files specified and default config file {} not found",
+                defl_config_path
+            );
+        }
+    }
 
+    let mut config = LlgTrtConfig::default();
+
+    if cli_config.save_config.is_some() {
+        log::info!("Skipping tokenizer config load");
+    } else {
+        let tokenizer_folder = cli_config.tokenizer.as_ref().unwrap_or(&cli_config.engine);
+        let tokenizer_config = format!("{}/tokenizer_config.json", tokenizer_folder);
+        log::info!("Loading tokenizer config from {:?}", tokenizer_config);
+        config.tokenizer = serde_json::from_reader(std::fs::File::open(tokenizer_config)?)
+            .map_err(|e| anyhow!("error loading tokenizer_config.json: {}", e))?;
+    }
+
+    let mut config = serde_json::to_value(&config)?;
+
+    for file_name in &cli_config.config {
+        log::info!("Loading JSON5 config from {:?}", file_name);
+        let file_content = std::fs::read_to_string(&file_name)
+            .map_err(|e| anyhow!("Error reading config file {}: {}", file_name, e))?;
+        let patch = json5::from_str::<serde_json::Value>(&file_content)
+            .map_err(|e| anyhow!("Error in JSON5 in {}: {}", file_name, e))?;
+        jsonutil::json_merge(&mut config, &patch);
+    }
+
+    let mut config: LlgTrtConfig =
+        serde_json::from_value(config).map_err(|e| anyhow!("Error interpreting config: {}", e))?;
+
+    if cli_config.save_config.is_some() {
+        log::info!("Skipping separate chat template load");
+    } else {
+        let chat_template = cli_config
+            .chat_template
+            .clone()
+            .unwrap_or_else(|| format!("{}/chat_template.j2", cli_config.engine));
+        log::info!("Checking for separate chat template in {:?}", chat_template);
+        if std::fs::exists(&chat_template)? {
+            config.tokenizer.chat_template = Some(std::fs::read_to_string(chat_template)?);
+        }
+    }
+
+    if let Some(filename) = cli_config
+        .save_config
+        .as_ref()
+        .or(cli_config.save_complete_config.as_ref())
+    {
+        let r = json5_to_string(
+            &serde_json::to_value(&config)?,
+            &serde_json::to_value(&LlgTrtConfig::default())?,
+            &config_info(),
+        );
+        if filename == "-" {
+            log::info!("Printing merged config to stdout");
+            println!("{}", r);
+        } else {
+            log::info!("Saving merged config to {}", filename);
+            std::fs::write(filename, r)?;
+        }
+        return Ok(());
+    }
+
+    let runtime_config = &config.runtime;
     let p = &mut exec_config.trt_params;
 
     macro_rules! set_field {
         ($fld:ident) => {
-            if let Some(v) = runtime_config.$fld {
-                p.$fld = v
-                    .try_into()
-                    .expect(concat!("Invalid value for ", stringify!($fld)));
-            }
+            p.$fld = runtime_config
+                .$fld
+                .try_into()
+                .expect(concat!("Invalid value for ", stringify!($fld)));
         };
     }
-
-    // we default these to true
-    p.enable_chunked_context = true;
-    p.enable_kv_cache_reuse = true;
 
     set_field!(enable_chunked_context);
     set_field!(enable_kv_cache_reuse);
@@ -101,24 +133,15 @@ pub async fn run_server(cli_config: Config) -> anyhow::Result<()> {
     set_field!(max_queue_size);
     set_field!(guaranteed_no_evict);
     set_field!(kv_cache_free_gpu_mem_fraction);
-
-    if let Some(v) = runtime_config.kv_cache_host_memory_megabytes {
-        p.kv_cache_host_memory_bytes = v * 1024 * 1024;
-    }
+    p.kv_cache_host_memory_bytes = runtime_config.kv_cache_host_memory_megabytes * 1024 * 1024;
 
     log::info!("Initializing executor with config: {:?}", exec_config);
 
-    let (executor, tok_env, chat_builder) = AsyncExecutor::new(&cli_config, exec_config)?;
+    let (executor, tok_env, chat_builder) = AsyncExecutor::new(&cli_config, &config, exec_config)?;
 
     // we only get here on rank 0
 
-    let llg_config: serde_json::Value = load_config_file(
-        &cli_config.llguidance_config,
-        format!("{}/llguidance.json", cli_config.engine),
-        serde_json::json!({}),
-    )?;
-
-    let constraint_mgr = ConstraintMgr::new(tok_env.clone(), tok_env.clone(), llg_config)?;
+    let constraint_mgr = ConstraintMgr::new(tok_env.clone(), tok_env.clone(), &config.llguidance)?;
 
     AsyncExecutor::set_global(executor);
 

@@ -82,13 +82,13 @@ pub fn init_log(mode: LogMode) -> Result<()> {
     let logger = match mode {
         LogMode::Normal => Logger::try_with_env_or_str("info,tokenizers=error")?
             .format(truncated_format)
-            .log_to_stdout(),
+            .log_to_stderr(),
         LogMode::Test => {
             Logger::try_with_env_or_str("debug,tokenizers=error")?.write_mode(WriteMode::SupportCapture)
         }
         LogMode::Daemon => Logger::try_with_env_or_str("info,tokenizers=error")?
             .format(daemon_format)
-            .log_to_stdout(),
+            .log_to_stderr(),
     };
 
     logger.start()?;

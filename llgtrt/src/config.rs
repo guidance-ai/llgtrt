@@ -1,45 +1,76 @@
-use clap::{Args, Parser};
+use clap::Parser;
 use serde::{Deserialize, Serialize};
 
-const TRT_CONFIG: &str = "TensorRT-LLM runtime config (runtime.json)";
+use crate::{constraint_mgr::LlgConfig, tokenizer::TokenizerConfig};
 
-#[derive(Args, Debug, Serialize, Deserialize)]
+const CONFIG_INFO: &str = include_str!("config_info.json");
+pub fn config_info() -> serde_json::Value {
+    serde_json::from_str(CONFIG_INFO).unwrap()
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct TrtLlmRuntimeConfig {
-    /// When set to true, the scheduler is more conservative, so that a started request is never evicted; defaults to false (which improves throughput)
-    #[clap(long, help_heading = TRT_CONFIG)]
-    pub guaranteed_no_evict: Option<bool>,
+    /// Make the scheduler more conservative, so that a started request is never evicted.
+    /// Defaults to false (which improves throughput)
+    pub guaranteed_no_evict: bool,
 
-    /// Maximum number of concurrent requests; defaults to 128
-    #[clap(long, help_heading = TRT_CONFIG)]
-    pub max_batch_size: Option<usize>,
+    /// Maximum number of concurrent requests
+    pub max_batch_size: usize,
 
-    /// Maximum number of tokens in batch; defaults to 8192
-    #[clap(long, help_heading = TRT_CONFIG)]
-    pub max_num_tokens: Option<usize>,
+    /// Maximum number of tokens in batch
+    pub max_num_tokens: usize,
 
-    /// Maximum number of requests in queue (when batch already full); defaults to 0
-    #[clap(long, help_heading = TRT_CONFIG)]
-    pub max_queue_size: Option<usize>,
+    /// Maximum number of requests in queue (when batch already full)
+    pub max_queue_size: usize,
 
-    /// Chunk prefill/generation into pieces; defaults to true (unlike trtllm)
-    #[clap(long, help_heading = TRT_CONFIG)]
-    pub enable_chunked_context: Option<bool>,
+    /// Chunk prefill/generation into pieces
+    /// Defaults to true (unlike trtllm)
+    pub enable_chunked_context: bool,
 
-    /// Prefix-caching (LRU-reuse blocks between requests); defaults to true (unlike trtllm)
-    #[clap(long, help_heading = TRT_CONFIG)]
-    pub enable_kv_cache_reuse: Option<bool>,
+    /// Prefix-caching (LRU-reuse blocks between requests)
+    /// Defaults to true (unlike trtllm)
+    pub enable_kv_cache_reuse: bool,
 
-    /// Fraction of free GPU memory to use for KV cache; defaults to 0.9
-    #[clap(long, help_heading = TRT_CONFIG)]
-    pub kv_cache_free_gpu_mem_fraction: Option<f32>,
+    /// Fraction of free GPU memory to use for KV cache
+    pub kv_cache_free_gpu_mem_fraction: f32,
 
-    /// Host memory to use for KV cache; defaults to 0
-    #[clap(long, help_heading = TRT_CONFIG)]
-    pub kv_cache_host_memory_megabytes: Option<usize>,
+    /// Host memory to use for KV cache
+    pub kv_cache_host_memory_megabytes: usize,
+}
+
+impl Default for TrtLlmRuntimeConfig {
+    fn default() -> Self {
+        Self {
+            guaranteed_no_evict: false,
+            max_batch_size: 128,
+            max_num_tokens: 8192,
+            max_queue_size: 0,
+            enable_chunked_context: true,
+            enable_kv_cache_reuse: true,
+            kv_cache_free_gpu_mem_fraction: 0.9,
+            kv_cache_host_memory_megabytes: 0,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Default)]
+pub struct LlgTrtConfig {
+    /// TensorRT-LLM runtime parameters
+    /// Defaults should be reasonable, otherwise see 
+    /// https://nvidia.github.io/TensorRT-LLM/performance/perf-best-practices.html
+    pub runtime: TrtLlmRuntimeConfig,
+
+    /// Tokenizer configuration (defaults to tokenizer_config.json contents)
+    /// Typically no changes are needed here, except for chat_template
+    /// which is best overridden with --chat-template filename.j2 option.
+    pub tokenizer: TokenizerConfig,
+
+    /// Configuration for the LLGuidance constraint library
+    pub llguidance: LlgConfig,
 }
 
 #[derive(Parser, Debug, Serialize, Deserialize)]
-pub struct Config {
+pub struct CliConfig {
     /// Host to bind to
     #[arg(long, short = 'H', default_value_t = String::from("0.0.0.0"))]
     pub host: String,
@@ -56,13 +87,23 @@ pub struct Config {
     #[arg(long, short = 'T')]
     pub tokenizer: Option<String>,
 
-    /// Path to JSON file TensorRT-LLM runtime config; defaults to runtime.json in engine dir
-    #[arg(long, short = 'R')]
-    pub runtime_config: Option<String>,
+    /// Path to JSON5 configuration file; multiple files are JSON-merged in order; defaults to:
+    /// <engine>/llgtrt.json5 if it exists
+    #[arg(long, short = 'C')]
+    pub config: Vec<String>,
 
-    /// Path to JSON file with llguidance library config; defaults to llguidance.json in engine dir
-    #[arg(long, short = 'L')]
-    pub llguidance_config: Option<String>,
+    /// Path to chat template file; defaults to <engine>/chat_template.j2 if it exists
+    /// Overrides values in all configs.
+    #[arg(long)]
+    pub chat_template: Option<String>,
+
+    /// When present, save the merged configuration to this file and exit; use '-' for stdout
+    #[arg(long)]
+    pub save_config: Option<String>,
+
+    /// Similar to --save-config, but includes chat template and tokenizer config
+    #[arg(long)]
+    pub save_complete_config: Option<String>,
 
     /// Debug output
     #[arg(long, short = 'd')]
@@ -71,9 +112,6 @@ pub struct Config {
     /// Quiet output (only warnings)
     #[arg(long, short = 'q')]
     pub quiet: bool,
-
-    #[clap(flatten)]
-    pub runtime_config_inline: TrtLlmRuntimeConfig,
 
     /// Api Key to access the server
     #[arg(long)]

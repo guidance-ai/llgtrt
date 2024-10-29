@@ -1,15 +1,23 @@
-use crate::{chat::ChatBuilder, config::Config};
-use anyhow::{anyhow, ensure};
+use crate::{
+    chat::ChatBuilder,
+    config::{CliConfig, LlgTrtConfig},
+};
+use anyhow::ensure;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 use toktrie::{TokEnv, TokEnvWithTrie};
+
+const DEFAULT_TEMPLATE: &str = r#"{{- bos_token }}
+{%- for message in messages %}
+    {{- '<|' + message['role'] + |>\n' }}
+    {{- message['content'] + eos_token }}
+{%- endfor %}
+{%- if add_generation_prompt %}
+    {{- '<|assistant|>\n' }}
+{%- endif %}"#;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TokenizerConfig {
-    #[serde(default)]
-    pub added_tokens_decoder: HashMap<String, TokenProperties>,
-
     pub chat_template: Option<String>,
 
     #[serde(default)]
@@ -24,50 +32,27 @@ pub struct TokenizerConfig {
     pub mask_token: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct TokenProperties {
-    pub content: String,
-    #[serde(default)]
-    pub lstrip: bool,
-    #[serde(default)]
-    pub normalized: bool,
-    #[serde(default)]
-    pub rstrip: bool,
-    #[serde(default)]
-    pub single_word: bool,
-    #[serde(default)]
-    pub special: bool,
+impl Default for TokenizerConfig {
+    fn default() -> Self {
+        Self {
+            chat_template: Some(DEFAULT_TEMPLATE.to_string()),
+            clean_up_tokenization_spaces: false,
+            eos_token: "<default_eos_token>".to_string(),
+            bos_token: None,
+            unk_token: None,
+            sep_token: None,
+            pad_token: None,
+            cls_token: None,
+            mask_token: None,
+        }
+    }
 }
 
-pub fn setup_tokenizer(cli_config: &Config) -> anyhow::Result<(TokEnv, ChatBuilder)> {
+pub fn setup_tokenizer(
+    cli_config: &CliConfig,
+    config: &LlgTrtConfig,
+) -> anyhow::Result<(TokEnv, ChatBuilder)> {
     let tokenizer_folder = cli_config.tokenizer.as_ref().unwrap_or(&cli_config.engine);
-    let tokenizer_config = format!("{}/tokenizer_config.json", tokenizer_folder);
-    log::info!("Loading tokenizer config from {:?}", tokenizer_config);
-    let mut tok_cfg: TokenizerConfig =
-        serde_json::from_reader(std::fs::File::open(tokenizer_config)?)
-            .map_err(|e| anyhow!("error loading tokenizer_config.json: {}", e))?;
-
-    let tokenizer_config_llg = format!("{}/tokenizer_config_llgtrt.json", tokenizer_folder);
-    log::info!("Checking for overrides in {:?}", tokenizer_config_llg);
-    if std::fs::exists(&tokenizer_config_llg)? {
-        let mut json = serde_json::to_value(&tok_cfg)?;
-        let overrides: Value = serde_json::from_reader(std::fs::File::open(tokenizer_config_llg)?)
-            .map_err(|e| anyhow!("JSON error in tokenizer_config_llgtrt.json: {}", e))?;
-        for (k, v) in overrides.as_object().expect("overrides must be an object") {
-            if v.is_null() {
-                continue;
-            }
-            json.as_object_mut().unwrap().insert(k.clone(), v.clone());
-        }
-        tok_cfg = serde_json::from_value(json)
-            .map_err(|e| anyhow!("error applying tokenizer_config_llgtrt.json: {}", e))?;
-    }
-
-    let chat_template = format!("{}/chat_template.j2", tokenizer_folder);
-    log::info!("Checking for separate chat template in {:?}", chat_template);
-    if std::fs::exists(&chat_template)? {
-        tok_cfg.chat_template = Some(std::fs::read_to_string(chat_template)?);
-    }
 
     let tokenizer = format!("{}/tokenizer.json", tokenizer_folder);
     log::info!("Loading tokenizer from {:?}", tokenizer);
@@ -76,6 +61,7 @@ pub fn setup_tokenizer(cli_config: &Config) -> anyhow::Result<(TokEnv, ChatBuild
     let trie = tok_env.tok_trie();
     let mut info = trie.info().clone();
 
+    let tok_cfg = &config.tokenizer;
     let toks = tok_env.tokenize_special(&tok_cfg.eos_token);
     ensure!(
         toks.len() == 1,

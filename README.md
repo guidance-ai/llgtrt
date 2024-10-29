@@ -4,15 +4,15 @@ This project demonstrates how to use
 [llguidance library](https://github.com/microsoft/llguidance)
 for constrained output with
 [NVIDIA TensorRT-LLM](https://github.com/NVIDIA/TensorRT-LLM),
-implementing a server with 
-[OpenAI REST API](https://platform.openai.com/docs/api-reference/introduction).
+implementing a REST server compatible with 
+[OpenAI APIs](https://platform.openai.com/docs/api-reference/introduction).
 
 The server supports regular completions and chat endpoints
-with JSON with schema enforcement ("Structured Output" in OpenAI docs),
+with JSON with schema enforcement ("Structured Output"),
 as well as full context-free grammars using [Guidance library](https://github.com/guidance-ai/guidance).
 
 This server is similar in spirit to [TensorRT-LLM OpenAI server example](./TensorRT-LLM/examples/apps/openai_server.py),
-but python-free and with support for constrained output.
+but is Python-free (implemented in Rust) and with support for constrained output.
 Similarly to the example above, it **does not** use the NVIDIA Triton Inference Server.
 
 ## Requirements
@@ -89,17 +89,6 @@ HF Transformers `config.json` as well as the `.safetensors` files and
 `tokenizer.json`).
 If you're running on more than one 1 GPU, modify the `--tp_size` argument.
 
-### Create config files
-
-By default, llgtrt will use chat template from `tokenizer_config.json`.
-If present, it will also read `tokenizer_config_llgtrt.json` from the same directory
-and apply any keys from it to `tokenizer_config.json`.
-Afterwards, if `chat_template.j2` file is found, it will be used as the chat template.
-
-You can also modify TensortRT-LLM's runtime configuration with `runtime.json` file
-and `llguidance_parser` configuration with `llguidance.json`.
-This is optional, see below.
-
 ### Running the Engine
 
 ```bash
@@ -110,8 +99,25 @@ The command will print out the actual `docker run` invocation on first line
 if you want to invoke it directly later.
 `PORT` defaults to 3000.
 
+### Update configuration
+
 You can pass additional arguments after the engine path.
 Try running `./docker/run.sh /path/to/hf-models/model-engine --help` for more info.
+Most of the options are specified in configuration files,
+but which configuration files are used can be modified with command line arguments.
+
+By default, llgtrt will use chat template from `tokenizer_config.json`.
+
+If present, it will also read `tokenizer_config_llgtrt.json` from the same directory
+and apply any keys from it to `tokenizer_config.json`.
+Afterwards, if `chat_template.j2` file is found, it will be used as the chat template.
+
+You can also modify TensortRT-LLM's runtime configuration with `runtime.json` file
+and `llguidance_parser` configuration with `llguidance.json`.
+This is optional, see below.
+
+
+
 The `--help` has up-to-date info on `runtime.json` file -
 the options can be specified either in these files (replace `-` with `_`)
 or on command line.

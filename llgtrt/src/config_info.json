@@ -1,0 +1,57 @@
+{
+ "##info##": "Use scripts/regen.sh to re-generate this file",
+ "runtime": {
+  "#": "TensorRT-LLM runtime parameters\nDefaults should be reasonable, otherwise see\nhttps://nvidia.github.io/TensorRT-LLM/performance/perf-best-practices.html",
+  "guaranteed_no_evict": {
+   "#": "Make the scheduler more conservative, so that a started request is never evicted.\nDefaults to false (which improves throughput)"
+  },
+  "max_batch_size": {
+   "#": "Maximum number of concurrent requests"
+  },
+  "max_num_tokens": {
+   "#": "Maximum number of tokens in batch"
+  },
+  "max_queue_size": {
+   "#": "Maximum number of requests in queue (when batch already full)"
+  },
+  "enable_chunked_context": {
+   "#": "Chunk prefill/generation into pieces\nDefaults to true (unlike trtllm)"
+  },
+  "enable_kv_cache_reuse": {
+   "#": "Prefix-caching (LRU-reuse blocks between requests)\nDefaults to true (unlike trtllm)"
+  },
+  "kv_cache_free_gpu_mem_fraction": {
+   "#": "Fraction of free GPU memory to use for KV cache"
+  },
+  "kv_cache_host_memory_megabytes": {
+   "#": "Host memory to use for KV cache"
+  }
+ },
+ "tokenizer": {
+  "#": "Tokenizer configuration (defaults to tokenizer_config.json contents)\nTypically no changes are needed here, except for chat_template\nwhich is best overridden with --chat-template filename.j2 option."
+ },
+ "llguidance": {
+  "#": "Configuration for the LLGuidance constraint library",
+  "limits": {
+   "#": "Override any of the parser limits.",
+   "max_items_in_row": {
+    "#": "For non-ambiguous grammars, this is the maximum \"branching factor\" of the grammar.\nFor ambiguous grammars, this might get hit much quicker.\nDefault: 200"
+   },
+   "initial_lexer_fuel": {
+    "#": "How much \"fuel\" are we willing to spend to build initial lexer regex AST nodes.\nDefault: 1_000_000 (~20ms)"
+   },
+   "step_lexer_fuel": {
+    "#": "Maximum lexer fuel for computation of the whole token mask.\nDefault: 500_000 (~10ms)"
+   },
+   "max_lexer_states": {
+    "#": "Maximum number of lexer states.\nDefault: 10_000"
+   },
+   "max_grammar_size": {
+    "#": "Maximum size of the grammar (symbols in productions)\nDefault: 500_000 (a few megabytes of JSON)"
+   }
+  },
+  "log_level": {
+   "#": "Log level which goes to stderr. In-memory logs per-sequence are managed by ConstraintInit.log_level."
+  }
+ }
+}

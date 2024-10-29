@@ -1,0 +1,15 @@
+{
+    "C_Cpp.autoAddFileAssociations": false,
+    "files.readonlyInclude": {
+        "**/config_info.json": true
+    },
+    "cSpell.words": [
+        "ckpt",
+        "fmha",
+        "llgtrt",
+        "mpirun",
+        "npuichigo",
+        "openai",
+        "trtllm"
+    ]
+}

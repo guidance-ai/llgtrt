@@ -1,19 +1,11 @@
 use crate::{
+    jsonutil,
     routes::openai::{ChatCompletionMessageContentPart, ChatCompletionMessageParams, Tool},
     tokenizer::TokenizerConfig,
 };
 use anyhow::anyhow;
 use minijinja::{value::Kwargs, Environment, Error, ErrorKind, Value};
 use serde::{Deserialize, Serialize};
-
-const DEFAULT_TEMPLATE: &str = r#"{{- bos_token }}
-{%- for message in messages %}
-    {{- '<|' + message['role'] + |>\n' }}
-    {{- message['content'] + eos_token }}
-{%- endfor %}
-{%- if add_generation_prompt %}
-    {{- '<|assistant|>\n' }}
-{%- endif %}"#;
 
 pub struct ChatBuilder {
     default_context: TemplateContext,
@@ -46,19 +38,6 @@ struct TemplateContext {
 fn date_string() -> String {
     // 3 October 2024
     chrono::Utc::now().format("%e %B %Y").to_string()
-}
-
-fn remove_null(v: &mut serde_json::Value) {
-    if let Some(map) = v.as_object_mut() {
-        for (_, v) in map.iter_mut() {
-            remove_null(v);
-        }
-        map.retain(|_, v| !v.is_null());
-    }
-    // remove empty arrays
-    if let Some(arr) = v.as_array_mut() {
-        arr.iter_mut().for_each(remove_null);
-    }
 }
 
 fn tojson(value: Value, args: Kwargs) -> Result<Value, Error> {
@@ -113,7 +92,7 @@ impl ChatBuilder {
         let template = config
             .chat_template
             .clone()
-            .unwrap_or_else(|| DEFAULT_TEMPLATE.to_string());
+            .expect("chat_template should be set in TokenizerConfig");
         log::info!("chat template:\n{}", template);
         env.add_template_owned("chat", template)
             .map_err(|e| anyhow!("error parsing chat_template: {}", e))?;
@@ -147,7 +126,7 @@ impl ChatBuilder {
             context.tools = Some(params.tools.clone());
         }
         let mut context = serde_json::to_value(&context)?;
-        remove_null(&mut context);
+        jsonutil::remove_null(&mut context);
         let r = self
             .env
             .get_template("chat")

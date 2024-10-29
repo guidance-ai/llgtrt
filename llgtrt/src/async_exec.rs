@@ -16,7 +16,12 @@ use trtllm_rs::{
     TlcLogitsEntry,
 };
 
-use crate::{chat::ChatBuilder, config::Config, routes::openai::FinishReason, tokenizer::setup_tokenizer};
+use crate::{
+    chat::ChatBuilder,
+    config::{CliConfig, LlgTrtConfig},
+    routes::openai::FinishReason,
+    tokenizer::setup_tokenizer,
+};
 
 pub struct StepResults {
     pub response: ResponseChunk,
@@ -330,7 +335,11 @@ impl AsyncExecutor {
         self.executor.cancel_request(req_id)
     }
 
-    pub fn new(cli_config: &Config, mut executor_init: ExecutorInit) -> Result<(Self, TokEnv, ChatBuilder)> {
+    pub fn new(
+        cli_config: &CliConfig,
+        config: &LlgTrtConfig,
+        mut executor_init: ExecutorInit,
+    ) -> Result<(Self, TokEnv, ChatBuilder)> {
         executor_init.logits_callback = Some(logits_processor);
         let max_batch_size = executor_init.trt_params.max_batch_size as usize;
         log::info!("new executor: max_batch_size={max_batch_size}");
@@ -340,7 +349,7 @@ impl AsyncExecutor {
         executor.check_mpi();
 
         // only setup tokenizer on rank 0
-        let (tok_env, chat_builder) = setup_tokenizer(cli_config)?;
+        let (tok_env, chat_builder) = setup_tokenizer(cli_config, config)?;
         let trie = tok_env.tok_trie();
         let n_vocab = trie.vocab_size();
 
