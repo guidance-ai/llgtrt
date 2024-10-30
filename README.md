@@ -1,10 +1,13 @@
 # llgtrt (llguidance + TensorRT-LLM)
 
-This project demonstrates how to use the [llguidance library](https://github.com/microsoft/llguidance) for constrained output with [NVIDIA TensorRT-LLM](https://github.com/NVIDIA/TensorRT-LLM), implementing a REST server compatible with [OpenAI APIs](https://platform.openai.com/docs/api-reference/introduction).
+This project implements a REST HTTP server with 
+[OpenAI-compatible API](https://platform.openai.com/docs/api-reference/introduction),
+based on [NVIDIA TensorRT-LLM](https://github.com/NVIDIA/TensorRT-LLM)
+and [llguidance library](https://github.com/microsoft/llguidance) for constrained output.
 
 The server supports regular completions and chat endpoints with JSON schema enforcement ("Structured Output"), as well as full context-free grammars using the [Guidance library](https://github.com/guidance-ai/guidance).
 
-This server is similar in spirit to the [TensorRT-LLM OpenAI server example](./TensorRT-LLM/examples/apps/openai_server.py), but it is Python-free (implemented in Rust) and includes support for constrained output. Like the example above, it **does not** use the NVIDIA Triton Inference Server.
+This server is similar in spirit to the [TensorRT-LLM OpenAI server example](https://github.com/NVIDIA/TensorRT-LLM/blob/main/examples/apps/openai_server.py), but it is Python-free (implemented in Rust) and includes support for constrained output. Like the example above, it **does not** use the NVIDIA Triton Inference Server.
 
 ## Structured Output
 
@@ -17,6 +20,8 @@ This approach differs from [Outlines](https://github.com/dottxt-ai/outlines) (wh
 ## Requirements
 
 You will need a Linux machine with an NVIDIA GPU and Docker set up to use the `nvidia-docker` runtime.
+
+So far, we have only tested it on 4xA100 (and single A100).
 
 ## Running
 
@@ -45,7 +50,10 @@ The build script will initialize submodules if they are missing. It takes about 
 
 ### Building the TensorRT-LLM Engine
 
-Follow the [TensorRT-LLM Quick-start](https://nvidia.github.io/TensorRT-LLM/quick-start-guide.html), adjusted for running in the `llgtrt/llgtrt` container. First, use the `llgtrt/llgtrt` container to run bash.
+This is based on the [TensorRT-LLM Quick-start](https://nvidia.github.io/TensorRT-LLM/quick-start-guide.html).
+Follow the steps here, and look into that guide if needed.
+
+First, use the `llgtrt/llgtrt` container to run bash.
 
 ```bash
 ./docker/bash.sh --volume /path/to/hf-models:/models
