@@ -15,6 +15,35 @@ This server is similar in spirit to [TensorRT-LLM OpenAI server example](./Tenso
 but is Python-free (implemented in Rust) and with support for constrained output.
 Similarly to the example above, it **does not** use the NVIDIA Triton Inference Server.
 
+## Structured Output
+
+The sampling can be constrained by the [Low-Level Guidance library](https://github.com/microsoft/llguidance),
+part of the [Guidance project](https://github.com/guidance-ai/guidance).
+While TensorRT is computing logits (token probabilities) for the next token,
+the llguidance library computes a set of tokens allowed by the grammar
+(be it JSON schema, regular expression, or a full context-free grammar (CFG)),
+in a form of a bitmask.
+When both logits and bitmask are ready, a custom CUDA kernel applies the mask
+to the logits, and the result is used for sampling inside of TensorRT-LLM.
+
+There is no significant startup cost for all realistic sizes of grammars
+(no measured impact on time to first token (TTFT)).
+The overhead on generation speed (median time between tokens (TBT)) is typically 1-3%.
+The mask computation takes on the order of 1ms single-core CPU time per token per sequence in batch.
+Thus, with 16 cores and TBT of around 10ms, batch sizes of up to 160 are not CPU-bound.
+Typically, the unconstrained TBT are higher at such batch sizes though,
+and more cores are available, so the batch size is not a problem in production.
+
+Note that this is unlike [Outlines](https://github.com/dottxt-ai/outlines)
+(which pre-computes masks, with a startup cost and limits on schema complexity),
+and similar in spirit to
+[llama.cpp grammars](https://github.com/ggerganov/llama.cpp/blob/master/grammars/README.md),
+though much faster due to usage of a custom lexer with
+[derivative-based regexes](https://github.com/microsoft/derivre),
+an Earley parser, as well as
+[highly optimized](https://github.com/microsoft/toktrie/blob/main/implementation.md)
+token prefix tree.
+
 ## Requirements
 
 You will need a Linux machine with NVIDIA GPU and Docker set up to use the

@@ -83,3 +83,13 @@ And here's an example response (the quality of the joke may vary):
 
 ## Configuring
 
+If your model is in [model_configs folder](../model_configs) try the config there.
+
+Otherwise, run:
+
+```bash
+./docker/run.sh /path/to/hf-models/model-engine --print-config > llgtrt.json5
+./docker/run.sh /path/to/hf-models/model-engine --print-chat-template > chat_template.j2
+```
+
+Now, you can edit both files and move them to the engine folder.
