@@ -151,19 +151,10 @@ which has similar aims, but uses NVidia Triton Server wrapping TensorRT-LLM.
 
 ## TODO
 
-- [x] constrained output currently requires n=1
-- [x] stop sequence support
-- [x] don't use this by default: Capacity Scheduler Policy: GUARANTEED_NO_EVICT
-- [x] add script for mpirun auto-detecting engine size
 - [ ] multi-LoRA?
-- [x] text template for JSON schema (Please follow this schema: ...)
-- [x] test with TP=4
 - [ ] test phi-3.5
 - [ ] multi-modal input
 - [ ] when streaming, and stop is set, we need to buffer the output so as not to return the stop sequence itself
-- [x] unwind panic for mask computation etc
-- [ ] logprobs
+- [ ] logprobs (currently only work with TP>1; TRTLLM bug?)
 - [ ] logprobs with argmax sampling and constraints
 - [ ] expose the 'surprise' measure somehow
-- [x] for tools, right now it forces a tool - we want to allow either message or tool
-- [x] we use `<|python_tag|>` which is llama 3.1 specific; make it configurable
