@@ -114,6 +114,8 @@ curl -X POST "${TRT_API_BASE}chat/completions" \
       "content": "What is the weather in Seattle?"
     }
   ],
+  "return_expanded_prompt": true,
+  "include_json_schema_in_prompt": true,
   "max_tokens": 100,
   "temperature": 0.8,
   "tools": [{
@@ -151,6 +153,8 @@ curl -v -X POST "${TRT_API_BASE}chat/completions" \
       "content": "Please tell me a one line joke."
     }
   ],
+  "return_expanded_prompt": true,
+  "include_json_schema_in_prompt": true,
   "response_format": {
     "type": "json_schema",
     "json_schema": {
@@ -172,7 +176,7 @@ curl -v -X POST "${TRT_API_BASE}chat/completions" \
   },
   "max_tokens": 100,
   "temperature": 1.2
-}'
+}' | jq
 ;;
 
   *.json)

@@ -23,6 +23,11 @@ pub struct ChatCompletionCreateParams {
     #[serde(default)]
     pub tool_choice: ToolChoice,
 
+    /// Whether to include the JSON schema of tools or response format when using chat template.
+    /// Defaults to true.
+    #[serde(default)]
+    pub include_json_schema_in_prompt: Option<bool>,
+
     #[serde(flatten)]
     pub params: CommonCreateParams,
 }
@@ -159,6 +164,10 @@ pub struct CommonCreateParams {
 
     #[serde(default)]
     pub llg_log_level: LlgLogLevel,
+
+    /// When set, return the result of applying the chat template to the messages.
+    #[serde(default)]
+    pub return_expanded_prompt: Option<bool>,
 
     #[serde(skip)]
     pub logprobs: Option<usize>,
@@ -301,6 +310,8 @@ pub struct ChatCompletion {
     pub choices: Vec<ChatCompletionChoice>,
     /// Usage statistics for the completion request.
     pub usage: Usage,
+    /// Expanded prompt, if requested with return_expanded_prompt.
+    pub expanded_prompt: Option<String>,
 }
 
 #[derive(Serialize, Debug)]

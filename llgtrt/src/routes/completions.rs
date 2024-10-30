@@ -14,7 +14,7 @@ use std::fmt::Display;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use toktrie::TokEnv;
-use trtllm_rs::{ClientReqId, ReqId, RequestInit, RequestParams, TokenId};
+use trtllm_rs::{ClientReqId, ReqId, RequestInit, RequestParams};
 use uuid::Uuid;
 
 use crate::async_exec::{map_finish_reason, AsyncExecutor, StepResults};
@@ -46,6 +46,8 @@ struct ForkInfo {
 struct ReqInfo {
     req_id: ReqId,
     client_req_id: ClientReqId,
+    prompt: String,
+    return_expanded_prompt: bool,
     is_chat: bool,
     is_run: bool,
     usage: Usage,
@@ -179,12 +181,14 @@ fn llg_grammar(params: &CommonCreateParams) -> Result<Option<TopLevelGrammar>> {
 
 async fn mk_req_info(
     app_state: &AppState,
-    mut tokens: Vec<TokenId>,
+    prompt: String,
     params: &CommonCreateParams,
     is_chat: bool,
     is_run: bool,
 ) -> Result<Response, AppError> {
     let mut req_params = req_params_from_openai(params)?;
+    let mut tokens = app_state.tokenize_with_bos(&prompt);
+    log::debug!("{}", app_state.tok_env.tok_trie().tokens_dbg(&tokens));
 
     let eos_token = if is_chat {
         app_state.tok_eos_chat
@@ -263,6 +267,8 @@ async fn mk_req_info(
     let info = ReqInfo {
         req_id,
         client_req_id,
+        prompt,
+        return_expanded_prompt: params.return_expanded_prompt.unwrap_or(false),
         is_chat,
         is_run,
         cmpl_id,
@@ -303,8 +309,14 @@ pub async fn route_completions(
         return Err(e.into());
     }
 
-    let tokens = app_state.tokenize_with_bos(&request.prompt[0]);
-    mk_req_info(&app_state, tokens, &request.params, false, false).await
+    mk_req_info(
+        &app_state,
+        request.prompt[0].clone(),
+        &request.params,
+        false,
+        false,
+    )
+    .await
 }
 
 pub async fn route_chat_completions(
@@ -350,21 +362,26 @@ pub async fn route_chat_completions(
         request.params.response_format = Some(ResponseFormat::Llguidance { grammar });
     }
 
-    let json_schema = match &request.params.response_format {
-        Some(ResponseFormat::JsonSchema { json_schema }) => json_schema.schema.as_ref(),
-        _ => None,
+    let chat_history = if request.include_json_schema_in_prompt.unwrap_or(true) {
+        let json_schema = match &request.params.response_format {
+            Some(ResponseFormat::JsonSchema { json_schema }) => json_schema.schema.as_ref(),
+            _ => None,
+        };
+        app_state.chat_builder.build(ChatParams {
+            messages: &request.messages,
+            tools: &request.tools,
+            json_schema,
+        })?
+    } else {
+        // skip schema in prompt
+        app_state.chat_builder.build(ChatParams {
+            messages: &request.messages,
+            tools: &vec![],
+            json_schema: None,
+        })?
     };
 
-    let chat_history = app_state.chat_builder.build(ChatParams {
-        messages: &request.messages,
-        tools: &request.tools,
-        json_schema,
-    })?;
-
-    let tokens = app_state.tokenize_with_bos(&chat_history);
-    log::debug!("{}", app_state.tok_env.tok_trie().tokens_dbg(&tokens));
-
-    mk_req_info(&app_state, tokens, &request.params, true, false).await
+    mk_req_info(&app_state, chat_history, &request.params, true, false).await
 }
 
 fn json_to_llg(schema: &Value) -> Result<TopLevelGrammar> {
@@ -668,6 +685,11 @@ async fn completions(mut client: ReqInfo) -> Result<Json<Value>, AppError> {
         created,
         model: client.model_name,
         system_fingerprint: None,
+        expanded_prompt: if client.return_expanded_prompt {
+            Some(client.prompt)
+        } else {
+            None
+        },
         choices: client
             .forks
             .into_iter()
@@ -762,8 +784,5 @@ pub async fn route_llguidance(
         request.prompt.clone().unwrap_or(String::new())
     };
 
-    let tokens = app_state.tokenize_with_bos(&chat_history);
-    log::debug!("{}", app_state.tok_env.tok_trie().tokens_dbg(&tokens));
-
-    mk_req_info(&app_state, tokens, &common, is_chat, true).await
+    mk_req_info(&app_state, chat_history, &common, is_chat, true).await
 }

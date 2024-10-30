@@ -4,6 +4,7 @@
         "**/config_info.json": true
     },
     "cSpell.words": [
+        "argmax",
         "ckpt",
         "fmha",
         "llgtrt",
