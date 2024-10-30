@@ -10,6 +10,9 @@
 {%- if not tools is defined %}
     {%- set tools = none %}
 {%- endif %}
+{%- if not json_schema is defined %}
+    {%- set json_schema = none %}
+{%- endif %}
 
 {#- This block extracts the system message, so we can slot it into the right place. #}
 {%- if messages[0]['role'] == 'system' %}
@@ -43,6 +46,14 @@
         {{- "\n\n" }}
     {%- endfor %}
     {{- "<|eot_id|>"}}
+{%- endif %}
+
+{#- JSON schema guidance (invented, not in docs) #}
+{%- if not json_schema is none %}
+    {{- '<|start_header_id|>user<|end_header_id|>\n\n' -}}
+    {{- "Answer the user's question following this exact JSON schema:\n" }}
+    {{- json_schema | tojson(indent=4) }}
+    {{- "\n<|eot_id|>"}}
 {%- endif %}
 
 {%- for message in messages %}

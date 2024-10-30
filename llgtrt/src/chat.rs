@@ -23,6 +23,7 @@ struct TemplateContext {
     messages: Vec<ChatCompletionMessageParams>,
     tools: Option<Vec<Tool>>,
     documents: Option<Vec<ChatDocument>>,
+    json_schema: Option<serde_json::Value>,
     date_string: String,
     add_generation_prompt: bool,
     tools_in_user_message: Option<bool>,
@@ -67,6 +68,7 @@ impl ChatBuilder {
         let default_context = TemplateContext {
             messages: vec![],
             tools: None,
+            json_schema: None,
             documents: None,
             add_generation_prompt: true,
             tools_in_user_message: None,
@@ -93,7 +95,7 @@ impl ChatBuilder {
             .chat_template
             .clone()
             .expect("chat_template should be set in TokenizerConfig");
-        log::info!("chat template:\n{}", template);
+        log::debug!("chat template:\n{}", template);
         env.add_template_owned("chat", template)
             .map_err(|e| anyhow!("error parsing chat_template: {}", e))?;
         let res = Self {
@@ -103,6 +105,7 @@ impl ChatBuilder {
         // make sure the template is valid
         let msg = res.build(ChatParams {
             tools: &vec![],
+            json_schema: None,
             messages: &vec![
                 ChatCompletionMessageParams::System {
                     content: ChatCompletionMessageContentPart::Text("Be a good model".to_string()),
@@ -124,6 +127,9 @@ impl ChatBuilder {
         context.date_string = date_string();
         if params.tools.len() > 0 {
             context.tools = Some(params.tools.clone());
+        }
+        if let Some(json_schema) = params.json_schema {
+            context.json_schema = Some(json_schema.clone());
         }
         let mut context = serde_json::to_value(&context)?;
         jsonutil::remove_null(&mut context);
@@ -197,4 +203,5 @@ pub struct ChatParams<'a> {
     /// A list of messages comprising the conversation so far.
     pub messages: &'a Vec<ChatCompletionMessageParams>,
     pub tools: &'a Vec<Tool>,
+    pub json_schema: Option<&'a serde_json::Value>,
 }

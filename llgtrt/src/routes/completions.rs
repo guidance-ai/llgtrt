@@ -350,9 +350,15 @@ pub async fn route_chat_completions(
         request.params.response_format = Some(ResponseFormat::Llguidance { grammar });
     }
 
+    let json_schema = match &request.params.response_format {
+        Some(ResponseFormat::JsonSchema { json_schema }) => json_schema.schema.as_ref(),
+        _ => None,
+    };
+
     let chat_history = app_state.chat_builder.build(ChatParams {
         messages: &request.messages,
         tools: &request.tools,
+        json_schema,
     })?;
 
     let tokens = app_state.tokenize_with_bos(&chat_history);
@@ -750,6 +756,7 @@ pub async fn route_llguidance(
         app_state.chat_builder.build(ChatParams {
             messages,
             tools: &vec![],
+            json_schema: None,
         })?
     } else {
         request.prompt.clone().unwrap_or(String::new())
