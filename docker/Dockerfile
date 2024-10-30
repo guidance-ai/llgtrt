@@ -26,8 +26,15 @@ RUN cargo install rustfilt
 
 # install tensorrt_llm packages
 RUN mkdir -p /tmp/reqs
+
 # if this fails, run 'git submodule update --init' first
 COPY TensorRT-LLM/examples/llama/requirements.txt /tmp/reqs/
+COPY TensorRT-LLM/docker/common/install_mpi4py.sh /tmp/reqs/
+COPY TensorRT-LLM/docker/common/install_tensorrt.sh /tmp/reqs/
+
+RUN bash /tmp/reqs/install_mpi4py.sh
+RUN bash /tmp/reqs/install_tensorrt.sh
+
 RUN cd /tmp/reqs && pip install -r requirements.txt
 
 # more packages for this image
