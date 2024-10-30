@@ -93,6 +93,10 @@ pub struct CliConfig {
     #[arg(long, short = 'd')]
     pub debug: bool,
 
+    /// Debug output from llguidance
+    #[arg(long, short = 'D')]
+    pub debug_llg: bool,
+
     /// Quiet output (only warnings)
     #[arg(long, short = 'q')]
     pub quiet: bool,

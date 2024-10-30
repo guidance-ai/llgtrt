@@ -81,6 +81,10 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
     let mut config: LlgTrtConfig =
         serde_json::from_value(config).map_err(|e| anyhow!("Error interpreting config: {}", e))?;
 
+    if cli_config.debug_llg {
+        config.llguidance.log_level = 2;
+    }
+
     if cli_config.print_config {
         log::info!("Skipping separate chat template load");
     } else {

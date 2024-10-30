@@ -10,6 +10,8 @@
         "mpirun",
         "npuichigo",
         "openai",
+        "strftime",
+        "tojson",
         "trtllm"
     ]
 }
