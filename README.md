@@ -132,9 +132,6 @@ You can even specify several JSON5 config files, and they will be merged
 in the order they are specified (with later ones overriding the earlier ones).
 This way, you can separate configuration for tokenizer, runtime, and guidance parser.
 
-You can enable additional logging for llguidance by setting `llguidance.log_level` to `2`
-in the configuration file.
-
 ## Development
 
 First build the Docker container to be used in the dev container.
