@@ -7,6 +7,7 @@ pub struct AppState {
     pub tok_bos: Option<TokenId>,
     pub tok_eos_chat: Option<TokenId>,
     pub tok_eos_completions: Option<TokenId>,
+    pub json_start_token_name: Option<String>,
     pub next_client_req_id: std::sync::atomic::AtomicUsize,
     pub chat_builder: ChatBuilder,
     pub constraint_mgr: ConstraintMgr,

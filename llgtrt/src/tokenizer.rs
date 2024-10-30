@@ -30,6 +30,9 @@ pub struct TokenizerConfig {
     pub pad_token: Option<String>,
     pub cls_token: Option<String>,
     pub mask_token: Option<String>,
+
+    /// This is <|python_tag|> for Llama 3 models.
+    pub json_start_token: Option<String>,
 }
 
 impl Default for TokenizerConfig {
@@ -38,6 +41,7 @@ impl Default for TokenizerConfig {
             chat_template: Some(DEFAULT_TEMPLATE.to_string()),
             clean_up_tokenization_spaces: false,
             eos_token: "<default_eos_token>".to_string(),
+            json_start_token: None,
             bos_token: None,
             unk_token: None,
             sep_token: None,

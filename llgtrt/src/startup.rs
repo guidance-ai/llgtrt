@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use anyhow::anyhow;
+use anyhow::{anyhow, ensure};
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use axum::middleware::{self, Next};
@@ -144,6 +144,14 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
 
     let constraint_mgr = ConstraintMgr::new(tok_env.clone(), tok_env.clone(), &config.llguidance)?;
 
+    if let Some(t) = config.tokenizer.json_start_token.as_ref() {
+        ensure!(
+            tok_env.tok_trie().get_special_token(t).is_some(),
+            "json_start_token {:?} not found in tokenizer",
+            t
+        )
+    }
+
     AsyncExecutor::set_global(executor);
 
     // warmup request
@@ -172,6 +180,7 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
         tok_bos: trie.info().tok_bos,
         tok_eos_chat: Some(trie.info().tok_eos),
         tok_eos_completions: Some(trie.info().tok_eos),
+        json_start_token_name: config.tokenizer.json_start_token.clone(),
         tok_env,
         next_client_req_id: std::sync::atomic::AtomicUsize::new(1000),
         chat_builder,

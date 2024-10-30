@@ -1,0 +1,5 @@
+{
+  tokenizer: {
+    json_start_token: "<|python_tag|>",
+  },
+}

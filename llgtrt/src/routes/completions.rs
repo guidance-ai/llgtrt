@@ -327,9 +327,12 @@ pub async fn route_chat_completions(
         log::debug!("tools schema: {}", serde_json::to_string_pretty(&schema)?);
         let grammar = json_to_llg(&schema)?;
         let (mut builder, prev_root) = GrammarBuilder::from_grammar(grammar);
-        // TODO this is specific to llama 3.1
-        let tool_tag = builder.special_token("<|python_tag|>");
-        let schema_option = builder.join(&[tool_tag, prev_root]);
+        let schema_option = if let Some(n) = app_state.json_start_token_name.as_ref() {
+            let tool_tag = builder.special_token(n);
+            builder.join(&[tool_tag, prev_root])
+        } else {
+            prev_root
+        };
         let free_flow_option = builder.lexeme(RegexSpec::Regex("(\n|.)*".to_string()), false);
         let new_root = match &request.tool_choice {
             ToolChoice::Simple(ToolChoiceOption::None) => builder.select(&[free_flow_option]),

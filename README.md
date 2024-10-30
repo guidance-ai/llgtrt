@@ -166,4 +166,4 @@ which has similar aims, but uses NVidia Triton Server wrapping TensorRT-LLM.
 - [ ] logprobs with argmax sampling and constraints
 - [ ] expose the 'surprise' measure somehow
 - [x] for tools, right now it forces a tool - we want to allow either message or tool
-- [ ] we use `<|python_tag|>` which is llama 3.1 specific; make it configurable
+- [x] we use `<|python_tag|>` which is llama 3.1 specific; make it configurable

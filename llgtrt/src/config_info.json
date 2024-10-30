@@ -28,7 +28,10 @@
   }
  },
  "tokenizer": {
-  "#": "Tokenizer configuration (defaults to tokenizer_config.json contents)\nTypically no changes are needed here, except for chat_template\nwhich is best overridden with --chat-template filename.j2 option."
+  "#": "Tokenizer configuration (defaults to tokenizer_config.json contents)\nTypically no changes are needed here, except for chat_template\nwhich is best overridden with --chat-template filename.j2 option.",
+  "json_start_token": {
+   "#": "This is <|python_tag|> for Llama 3 models."
+  }
  },
  "llguidance": {
   "#": "Configuration for the LLGuidance constraint library",
