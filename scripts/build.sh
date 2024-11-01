@@ -5,7 +5,7 @@ while test $# -gt 0; do
     case "$1" in
         --clean)
             rm -rf trtllm-c/build
-            rm target/release/* 2>/dev/null || :
+            rm -rf target/release/* 2>/dev/null || :
             shift
             ;;
         *)

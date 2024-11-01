@@ -4,15 +4,15 @@ set -e
 cd $(dirname $0)/..
 SELF=./scripts/trtbld.sh
 
-CACHE=/root/trt-cache
-MODEL=Meta-Llama-3.1-8B-Instruct
+CACHE=${CACHE:-/root/trt-cache}
+MODEL=${MODEL:-Meta-Llama-3.1-8B-Instruct}
 LLAMA_EXAMPLE=$(pwd)/TensorRT-LLM/examples/llama
 MODEL_SRC=$CACHE/$MODEL-hf
 
 CKPT=$CACHE/$MODEL-ckpt
 ENGINE_DIR=$CACHE/$MODEL-engine
 
-TP_SIZE=1
+TP_SIZE=${TP_SIZE:-1}
 
 set -x
 
@@ -39,7 +39,8 @@ case "$1" in
         trtllm-build --checkpoint_dir $CKPT \
             --gemm_plugin bfloat16 \
             --output_dir $ENGINE_DIR \
-            --use_paged_context_fmha enable
+            --use_paged_context_fmha enable \
+            --max_batch_size 128
         cp $MODEL_SRC/tokenizer* $ENGINE_DIR
         ;;
 
