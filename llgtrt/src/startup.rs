@@ -158,26 +158,6 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
 
     AsyncExecutor::set_global(executor);
 
-    // warmup request
-    log::info!("Warming up executor");
-    let mut resp = tok_env.tokenize("The ultimate answer to life, the universe and everything is");
-    let (_, mut rx) = AsyncExecutor::lock().add_request(
-        RequestInit {
-            tokens: resp.clone(),
-            params: RequestParams {
-                max_new_tokens: 10,
-                ..Default::default()
-            },
-            client_req_id: ClientReqId::new(1),
-            is_run: false,
-        },
-        vec![],
-    )?;
-    while let Some(r) = rx.recv().await {
-        resp.extend_from_slice(&r.response.tokens);
-    }
-    log::info!("Warmup: {}", tok_env.tok_trie().tokens_dbg(&resp));
-
     let trie = tok_env.tok_trie();
 
     let state = AppState {
@@ -190,6 +170,31 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
         chat_builder,
         constraint_mgr,
     };
+
+    // warmup request
+    log::info!("Warming up executor");
+    let mut warmup_tokens =
+        state.tokenize_with_bos("The ultimate answer to life, the universe and everything is");
+    log::debug!("Warmup tokens: {:?}", warmup_tokens);
+    let (_, mut rx) = AsyncExecutor::lock().add_request(
+        RequestInit {
+            tokens: warmup_tokens.clone(),
+            params: RequestParams {
+                max_new_tokens: 10,
+                ..Default::default()
+            },
+            client_req_id: ClientReqId::new(1),
+            is_run: false,
+        },
+        vec![],
+    )?;
+    while let Some(r) = rx.recv().await {
+        warmup_tokens.extend_from_slice(&r.response.tokens);
+    }
+    log::info!(
+        "Warmup: {}",
+        state.tok_env.tok_trie().tokens_dbg(&warmup_tokens)
+    );
 
     let api_key = cli_config.api_key.clone();
 
