@@ -39,7 +39,8 @@ case "$1" in
         trtllm-build --checkpoint_dir $CKPT \
             --gemm_plugin bfloat16 \
             --output_dir $ENGINE_DIR \
-            --use_paged_context_fmha enable
+            --use_paged_context_fmha enable \
+            --max_batch_size 128
         cp $MODEL_SRC/tokenizer* $ENGINE_DIR
         ;;
 
