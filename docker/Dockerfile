@@ -29,13 +29,13 @@ RUN mkdir -p /tmp/reqs
 
 # if this fails, run 'git submodule update --init' first
 COPY TensorRT-LLM/examples/llama/requirements.txt /tmp/reqs/
-COPY TensorRT-LLM/docker/common/install_mpi4py.sh /tmp/reqs/
-COPY TensorRT-LLM/docker/common/install_tensorrt.sh /tmp/reqs/
+# COPY TensorRT-LLM/docker/common/install_mpi4py.sh /tmp/reqs/
+# COPY TensorRT-LLM/docker/common/install_tensorrt.sh /tmp/reqs/
 
-RUN bash /tmp/reqs/install_mpi4py.sh
-RUN bash /tmp/reqs/install_tensorrt.sh
+# RUN bash /tmp/reqs/install_mpi4py.sh
+# RUN bash /tmp/reqs/install_tensorrt.sh
 
-RUN cd /tmp/reqs && pip install -r requirements.txt
+RUN cd /tmp/reqs && pip install --upgrade -r requirements.txt
 
 # more packages for this image
 RUN pip install \
@@ -45,7 +45,7 @@ RUN pip install \
  pandas matplotlib plotly wheel
 RUN pip uninstall -y guidance
 
-RUN pip install --upgrade transformers
+# RUN pip install --upgrade transformers
 
 RUN cd /usr/local/lib/python3.10/dist-packages/tensorrt_llm/libs/ && \
     ln -s libnvinfer_plugin_tensorrt_llm.so libnvinfer_plugin_tensorrt_llm.so.10
