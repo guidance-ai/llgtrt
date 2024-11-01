@@ -59,8 +59,19 @@ def ensure_clean_working_tree():
         sys.exit(1)
 
 
+def ensure_on_main_branch():
+    branch_name = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                                 capture_output=True,
+                                 text=True).stdout.strip()
+    if branch_name != "main":
+        print(
+            f"Current branch is not main. Please checkout to main branch before running this script.\n"
+        )
+        sys.exit(1)
+
 def main():
     ensure_clean_working_tree()
+    ensure_on_main_branch()
 
     current_version = get_current_version(main_cargo_path)
     suggested_version = bump_patch_version(current_version)
