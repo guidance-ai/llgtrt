@@ -593,9 +593,8 @@ impl ReqInfo {
         if !self.is_run {
             if let Some(err) = &response.error {
                 log::error!("received error message: {}", err);
-                // Corresponds to https://github.com/openai/openai-python/blob/17ac6779958b2b74999c634c4ea4c7b74906027a/src/openai/_streaming.py#L113
                 return Event::default()
-                    .event("error")
+                    // .event("error")
                     .json_data(json!({
                         "error": {
                             "status_code": 500,
