@@ -1402,6 +1402,7 @@ dependencies = [
  "instant",
  "jsonschema",
  "lazy_static",
+ "regex-syntax",
  "rustc-hash 2.0.0",
  "serde",
  "serde_json",

@@ -277,6 +277,7 @@ pub enum ResponseFormat {
     Text,
     JsonObject,
     JsonSchema { json_schema: JsonSchemaOptions },
+    LarkGrammar { lark_grammar: String },
     Llguidance { grammar: TopLevelGrammar },
 }
 

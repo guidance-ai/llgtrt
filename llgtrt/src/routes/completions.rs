@@ -8,6 +8,7 @@ use axum::response::{IntoResponse, Response};
 use axum::Json;
 use futures_core::Stream;
 use llguidance_parser::api::{RegexSpec, TopLevelGrammar};
+use llguidance_parser::lark::{lark_to_llguidance, parse_lark};
 use llguidance_parser::{Constraint, GrammarBuilder, JsonCompileOptions};
 use serde_json::{json, Value};
 use std::fmt::Display;
@@ -173,6 +174,10 @@ fn llg_grammar(params: &CommonCreateParams) -> Result<Option<TopLevelGrammar>> {
         }) => {
             log::debug!("using strict JSON schema");
             json_to_llg(schema)?
+        }
+        Some(ResponseFormat::LarkGrammar { lark_grammar }) => {
+            log::debug!("using Lark grammar");
+            lark_to_llguidance(parse_lark(lark_grammar)?)?
         }
         _ => return Ok(None),
     };
