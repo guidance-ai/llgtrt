@@ -23,16 +23,32 @@ pub struct TokenizerConfig {
     #[serde(default)]
     pub clean_up_tokenization_spaces: bool,
 
-    pub eos_token: String,
-    pub bos_token: Option<String>,
-    pub unk_token: Option<String>,
-    pub sep_token: Option<String>,
-    pub pad_token: Option<String>,
-    pub cls_token: Option<String>,
-    pub mask_token: Option<String>,
+    pub eos_token: TokenRef,
+    pub bos_token: Option<TokenRef>,
+    pub unk_token: Option<TokenRef>,
+    pub sep_token: Option<TokenRef>,
+    pub pad_token: Option<TokenRef>,
+    pub cls_token: Option<TokenRef>,
+    pub mask_token: Option<TokenRef>,
 
     /// This is <|python_tag|> for Llama 3 models.
     pub json_start_token: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum TokenRef {
+    Name(String),
+    Map { content: String },
+}
+
+impl TokenRef {
+    pub fn name(&self) -> String {
+        match self {
+            TokenRef::Name(s) => s.clone(),
+            TokenRef::Map { content } => content.clone(),
+        }
+    }
 }
 
 impl Default for TokenizerConfig {
@@ -40,7 +56,7 @@ impl Default for TokenizerConfig {
         Self {
             chat_template: Some(DEFAULT_TEMPLATE.to_string()),
             clean_up_tokenization_spaces: false,
-            eos_token: "<default_eos_token>".to_string(),
+            eos_token: TokenRef::Name("<default_eos_token>".to_string()),
             json_start_token: None,
             bos_token: None,
             unk_token: None,
@@ -66,7 +82,7 @@ pub fn setup_tokenizer(
     let mut info = trie.info().clone();
 
     let tok_cfg = &config.tokenizer;
-    let toks = tok_env.tokenize_special(&tok_cfg.eos_token);
+    let toks = tok_env.tokenize_special(&tok_cfg.eos_token.name());
     ensure!(
         toks.len() == 1,
         "tokenizer_config.json -> eos_token ({:?}) must tokenize to a single token",
@@ -76,7 +92,7 @@ pub fn setup_tokenizer(
 
     info.tok_bos = None;
     if let Some(s) = &tok_cfg.bos_token {
-        let toks = tok_env.tokenize_special(s);
+        let toks = tok_env.tokenize_special(&s.name());
         ensure!(
             toks.len() == 1,
             "tokenizer_config.json -> bos_token ({:?}) must tokenize to a single token",

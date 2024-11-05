@@ -73,13 +73,13 @@ impl ChatBuilder {
             add_generation_prompt: true,
             tools_in_user_message: None,
             date_string: date_string(),
-            bos_token: config.bos_token.clone(),
-            eos_token: config.eos_token.clone(),
-            unk_token: config.unk_token.clone(),
-            sep_token: config.sep_token.clone(),
-            pad_token: config.pad_token.clone(),
-            cls_token: config.cls_token.clone(),
-            mask_token: config.mask_token.clone(),
+            eos_token: config.eos_token.name(),
+            bos_token: config.bos_token.as_ref().map(|x| x.name()),
+            unk_token: config.unk_token.as_ref().map(|x| x.name()),
+            sep_token: config.sep_token.as_ref().map(|x| x.name()),
+            pad_token: config.pad_token.as_ref().map(|x| x.name()),
+            cls_token: config.cls_token.as_ref().map(|x| x.name()),
+            mask_token: config.mask_token.as_ref().map(|x| x.name()),
         };
         let mut env = Environment::new();
         // https://github.com/huggingface/transformers/blob/e50bf61decf741c6d59e4ba633b7392712673bda/src/transformers/utils/chat_template_utils.py#L423
