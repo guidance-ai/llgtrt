@@ -7,7 +7,7 @@ import random
 import time
 import argparse
 
-PROMPT_SIZE = 5
+PROMPT_SIZE = 50_000
 NUM_THREADS = 10
 NUM_REPS = 3
 LLG = False
@@ -167,7 +167,8 @@ def send_one_stream(data: dict) -> list[Results]:
                 break
             data = json.loads(line)
             if data.get("error", None):
-                res.error = json.dumps(data["error"])
+                print("ERROR", data)
+                results[0].error = json.dumps(data["error"])
                 break
 
             if data["object"] == "initial-run":
@@ -283,10 +284,10 @@ def main():
     d = req_data()
     d["n"] = 1
     d["temperature"] = 1.0
-    d["max_tokens"] = 100
-    d["logprobs"] = True
+    d["max_tokens"] = 10
+    # d["logprobs"] = True
     # d["stop"] = ["Xked", "d ask"]
-    if True:
+    if False:
         print(send_one(d))
     else:
         d["llg_log_level"] = "json"

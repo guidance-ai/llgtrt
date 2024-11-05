@@ -633,10 +633,22 @@ impl ReqInfo {
 async fn completions_stream(
     mut client: ReqInfo,
 ) -> Result<Sse<impl Stream<Item = anyhow::Result<Event>>>, AppError> {
+    let result0 = client
+        .recv
+        .recv()
+        .await
+        .ok_or_else(|| anyhow!("no response"))?;
+    if let Some(err) = result0.response.error {
+        // return as HTTP error, not error event
+        return Err(anyhow!("{}", err).into());
+    }
+
     let response_stream = try_stream! {
         if client.is_run {
             yield client.initial_run();
         }
+
+        yield client.resp_to_event(result0);
 
         while let Some(result) = client.recv.recv().await {
             let is_error = result.response.error.is_some();
