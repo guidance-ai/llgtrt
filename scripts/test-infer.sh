@@ -86,6 +86,14 @@ curl -X POST "${TRT_API_BASE}chat/completions" \
      "temperature": 0.7
    }'
    ;;
+
+   live)
+    curl -v "${TRT_API_BASE}health/live"
+    ;;
+
+   ready)
+    curl -v "${TRT_API_BASE}health/ready"
+    ;;
   
   exn)
   curl -X POST "${TRT_API_BASE}chat/completions" \
