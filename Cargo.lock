@@ -1370,6 +1370,7 @@ dependencies = [
  "llguidance_parser",
  "log",
  "minijinja",
+ "minijinja-contrib",
  "rand",
  "rayon",
  "serde",
@@ -1484,6 +1485,16 @@ dependencies = [
  "indexmap 1.9.3",
  "memo-map",
  "self_cell",
+ "serde",
+]
+
+[[package]]
+name = "minijinja-contrib"
+version = "2.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "39ffd46ee854be23604a20efd6c9655374fefbe4d44b949dc0f907305d92873a"
+dependencies = [
+ "minijinja",
  "serde",
 ]
 

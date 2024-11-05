@@ -83,6 +83,8 @@ impl ChatBuilder {
         };
         let mut env = Environment::new();
         // https://github.com/huggingface/transformers/blob/e50bf61decf741c6d59e4ba633b7392712673bda/src/transformers/utils/chat_template_utils.py#L423
+        minijinja_contrib::add_to_environment(&mut env);
+        env.set_unknown_method_callback(minijinja_contrib::pycompat::unknown_method_callback);
         env.set_lstrip_blocks(true);
         env.set_trim_blocks(true);
         env.add_function("raise_exception", |msg: String| {
