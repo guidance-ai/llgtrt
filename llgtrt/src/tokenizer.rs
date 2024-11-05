@@ -89,6 +89,11 @@ pub fn setup_tokenizer(
         tok_cfg.eos_token
     );
     info.tok_eos = toks[0];
+    log::debug!(
+        "tok_eos: {:?} -> {}",
+        tok_cfg.eos_token.name(),
+        info.tok_eos
+    );
 
     info.tok_bos = None;
     if let Some(s) = &tok_cfg.bos_token {
@@ -99,6 +104,9 @@ pub fn setup_tokenizer(
             s
         );
         info.tok_bos = Some(toks[0]);
+        log::debug!("tok_bos: {:?} -> {}", s.name(), info.tok_bos.unwrap());
+    } else {
+        log::debug!("tok_bos: None");
     }
 
     let tok_env = Arc::new(TokEnvWithTrie::new(tok_env.clone(), trie.with_info(info)));

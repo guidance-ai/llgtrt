@@ -109,10 +109,11 @@ impl ChatBuilder {
             tools: &vec![],
             json_schema: None,
             messages: &vec![
-                ChatCompletionMessageParams::System {
-                    content: ChatCompletionMessageContentPart::Text("Be a good model".to_string()),
-                    name: None,
-                },
+                // Some models do not support System
+                // ChatCompletionMessageParams::System {
+                //     content: ChatCompletionMessageContentPart::Text("Be a good model".to_string()),
+                //     name: None,
+                // },
                 ChatCompletionMessageParams::User {
                     content: ChatCompletionMessageContentPart::Text("Hello".to_string()),
                     name: None,
