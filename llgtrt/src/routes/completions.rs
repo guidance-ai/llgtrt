@@ -664,7 +664,7 @@ async fn completions_stream(
         yield Event::default().data("[DONE]");
     };
 
-    Ok(Sse::new(response_stream).keep_alive(KeepAlive::default()))
+    Ok(Sse::new(response_stream))
 }
 
 async fn completions(mut client: ReqInfo) -> Result<Json<Value>, AppError> {
