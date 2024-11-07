@@ -7,10 +7,12 @@ import random
 import time
 import argparse
 
-PROMPT_SIZE = 50_000
+PROMPT_SIZE = 1_00
 NUM_THREADS = 10
 NUM_REPS = 3
 LLG = False
+MAX_TOKENS = 50
+NUM_JOKES = 10
 
 TRT_API_BASE = os.getenv("TRT_API_BASE")
 if TRT_API_BASE is None or TRT_API_BASE == "":
@@ -74,30 +76,35 @@ def llg_data():
             "grammar": json.loads(grammar),
         },
         "messages": joke_msg(),
-        "max_tokens": 50,
+        "max_tokens": MAX_TOKENS,
         "temperature": 0.8,
     }
 
 
 def req_data():
+    properties = {}
+    required = []
+    for idx in range(NUM_JOKES):
+        properties[f"joke_{idx}"] = {"type": "string"}
+        properties[f"rating_{idx}"] = {"type": "number"}
+        required.extend([f"joke_{idx}", f"rating_{idx}"])
     return {
         "model": "model",
         "messages": joke_msg(),
         ("response_format" if LLG else "ignore_me"): {
             "type": "json_schema",
-            "strict": True,
-            "schema": {
-                "type": "object",
-                "properties": {
-                    "joke": {"type": "string"},
-                    "rating": {"type": "number"},
+            "json_schema": {
+                "strict": True,
+                "schema": {
+                    "type": "object",
+                    "properties": properties,
+                    "additionalProperties": False,
+                    "required": required,
                 },
-                "additionalProperties": False,
-                "required": ["joke", "rating"],
             },
         },
         # "llg_log_level": "json",
-        "max_tokens": 50,
+        "max_tokens": MAX_TOKENS,
         "temperature": 0.8,
     }
 
@@ -116,6 +123,7 @@ class Results:
         self.completion_tokens = self.usage.get("completion_tokens", 0)
         self.completion_tokens2 = len(self.tbt)
         self.text = "".join(self.text_chunks)
+        print(self.text)
         if not self.tbt:
             self.avg_tbt = 0
             self.med_tbt = 0
@@ -174,7 +182,9 @@ def send_one_stream(data: dict) -> list[Results]:
             if data["object"] == "initial-run":
                 continue
 
-            idx: int = data["choices"][0]["index"] if not is_run else data["forks"][0]["index"]
+            idx: int = (
+                data["choices"][0]["index"] if not is_run else data["forks"][0]["index"]
+            )
             res = results[idx]
 
             now = time.monotonic()
@@ -240,12 +250,23 @@ def main():
     random.seed(0)
     parser = argparse.ArgumentParser()
     parser.add_argument("--max_threads", type=int, default=0)
+    parser.add_argument("--sessions", type=int, default=0)
     args = parser.parse_args()
 
-    if args.max_threads > 0:
-        global LLG
-        global NUM_THREADS
+    global LLG, NUM_REPS, NUM_THREADS, MAX_TOKENS, NUM_JOKES, PROMPT_SIZE
 
+    if args.sessions > 0:
+        LLG = True
+        NUM_THREADS = args.sessions
+        PROMPT_SIZE = 2600
+        NUM_REPS = 1
+        NUM_JOKES = 100
+        MAX_TOKENS = 4000
+        one_round()
+        return
+
+
+    if args.max_threads > 0:
         thr = 1
 
         def csv_line(lst):
@@ -280,7 +301,7 @@ def main():
 
         return
 
-    #d = llg_data()
+    # d = llg_data()
     d = req_data()
     d["n"] = 1
     d["temperature"] = 1.0

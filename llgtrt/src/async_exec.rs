@@ -110,7 +110,9 @@ impl PendingSeq {
 
         log::trace!("Tokens: {}", llg.tok_trie().tokens_dbg(tokens));
 
-        if tokens.len() > self.prompt_len {
+        let step_res = if tokens.len() > self.prompt_len {
+            // if we're past the prompt, commit last token
+            // and compute mask
             let tok = *tokens.last().unwrap();
             let r = llg.commit_token(Some(tok))?;
 
@@ -122,16 +124,25 @@ impl PendingSeq {
 
             assert!(r.ff_tokens.len() == 1);
             assert!(r.ff_tokens[0] == tok);
-        }
+            llg.compute_mask()?
+        } else {
+            // if we're still in prompt
+            if !llg.has_current_step_result() {
+                // first time, compute the mask
+                llg.compute_mask()?
+            } else {
+                // if trtllm wants to call us multiple times for the prompt
+                // (this happens due to chunked prefill), we re-use the first mask
+                llg.step_result()
+            }
+        };
 
-        let res = llg.compute_mask()?;
-
-        if res.is_stop() {
+        if step_res.is_stop() {
             self.stop = true;
             return Ok(());
         }
 
-        let mask = res.sample_mask.as_ref().expect("No mask");
+        let mask = step_res.sample_mask.as_ref().expect("No mask");
         self.entry.out_mask_pointer = copy_mask(mask);
         self.entry.temperature = llg.temperature;
 
@@ -178,6 +189,12 @@ extern "C" fn logits_processor(logits: *mut TlcLogitsEntry, num_logits: u32) {
         let mut pending_assignments = vec![];
         for (idx, entry) in entries.iter().enumerate() {
             if let Some(rd) = exec.req_data.get_mut(&entry.client_req_id()) {
+                log::debug!(
+                    "llg: {}: {} tokens ({} prompt tokens)",
+                    entry.req_id(),
+                    entry._num_tokens,
+                    rd.prompt_len
+                );
                 if let Some(llg_idx) = rd
                     .llg_infos
                     .iter()

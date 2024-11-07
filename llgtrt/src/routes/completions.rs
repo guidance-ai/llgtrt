@@ -3,7 +3,7 @@ use anyhow::{anyhow, bail, ensure, Result};
 use async_stream::try_stream;
 use axum::extract::State;
 use axum::http::HeaderMap;
-use axum::response::sse::{Event, KeepAlive, Sse};
+use axum::response::sse::{Event, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 use futures_core::Stream;
