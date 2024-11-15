@@ -430,6 +430,8 @@ fn valid_utf8_len(data: &Vec<u8>) -> usize {
 }
 
 fn take_final_logs(llg: &mut Constraint) -> Result<String> {
+    log::info!("llg-max-step: {:?}", llg.parser.max_step_stats());
+
     if !llg.log_json_progress && llg.parser.logger.buffer_level() == 0 {
         return Ok(String::new());
     }
