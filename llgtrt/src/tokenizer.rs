@@ -33,6 +33,10 @@ pub struct TokenizerConfig {
 
     /// This is <|python_tag|> for Llama 3 models.
     pub json_start_token: Option<String>,
+
+    /// Use to override tokenizer vocabulary size.
+    /// Use 32064 for phi3.
+    pub n_vocab_override: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -64,6 +68,7 @@ impl Default for TokenizerConfig {
             pad_token: None,
             cls_token: None,
             mask_token: None,
+            n_vocab_override: None,
         }
     }
 }
@@ -76,7 +81,10 @@ pub fn setup_tokenizer(
 
     let tokenizer = format!("{}/tokenizer.json", tokenizer_folder);
     log::info!("Loading tokenizer from {:?}", tokenizer);
-    let tok_env = toktrie_hf_tokenizers::ByteTokenizerEnv::from_name(&tokenizer, None)?;
+    let tok_env = toktrie_hf_tokenizers::ByteTokenizerEnv::from_name(
+        &tokenizer,
+        config.tokenizer.n_vocab_override,
+    )?;
     let tok_env: TokEnv = Arc::new(tok_env);
     let trie = tok_env.tok_trie();
     let mut info = trie.info().clone();

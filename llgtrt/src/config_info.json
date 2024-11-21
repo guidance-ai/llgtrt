@@ -31,6 +31,9 @@
   "#": "Tokenizer configuration (defaults to tokenizer_config.json contents)\nTypically no changes are needed here, except for chat_template\nwhich is best overridden with --chat-template filename.j2 option.",
   "json_start_token": {
    "#": "This is <|python_tag|> for Llama 3 models."
+  },
+  "n_vocab_override": {
+   "#": "Use to override tokenizer vocabulary size.\nUse 32064 for phi3."
   }
  },
  "llguidance": {
@@ -45,6 +48,9 @@
    },
    "step_lexer_fuel": {
     "#": "Maximum lexer fuel for computation of the whole token mask.\nDefault: 500_000 (~10ms)"
+   },
+   "step_max_items": {
+    "#": "Number of Earley items created for the whole token mask.\nDefault: 100_000 (~3ms)"
    },
    "max_lexer_states": {
     "#": "Maximum number of lexer states.\nDefault: 10_000"

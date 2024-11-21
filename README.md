@@ -121,6 +121,20 @@ The paths to `llgtrt.json5` and `chat_template.j2` are controlled by command lin
 
 You can specify multiple JSON5 config files, and they will be merged in the order specified (with later ones overriding earlier ones). This way, you can separate configuration for the tokenizer, runtime, and guidance parser.
 
+### Running phi-3
+
+The phi-3 tokenizer, while based on llama2 is slightly different.
+Drop the following `llgtrt.json5` file in engine folder:
+
+```json5
+{
+  "tokenizer": {
+    "bos_token": null,
+    "n_vocab_override": 32064
+  }
+}
+```
+
 ## Development
 
 First, build the Docker container to be used in the dev container. If you have already followed the steps above, you can skip this. Otherwise, run `./docker/build.sh`.
@@ -134,7 +148,7 @@ The basic structure of the server borrows inspiration from [npuichigo/openai_trt
 ## TODO
 
 - [ ] multi-LoRA?
-- [ ] test phi-3.5
+- [x] test phi-3.5
 - [ ] multi-modal input
 - [ ] when streaming, and stop is set, we need to buffer the output so as not to return the stop sequence itself
 - [ ] logprobs (currently only work with TP>1; TRTLLM bug?)
