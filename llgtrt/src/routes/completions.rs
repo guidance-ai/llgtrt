@@ -151,7 +151,7 @@ fn llg_grammar(params: &CommonCreateParams) -> Result<Option<TopLevelGrammar>> {
             json_schema: JsonSchemaOptions { strict: false, .. },
         }) => {
             log::debug!("using generic JSON schema");
-            json_to_llg(&json!({ "type": "object" }))?
+            json_to_llg(json!({ "type": "object" }))?
         }
         Some(ResponseFormat::JsonSchema {
             json_schema:
@@ -172,7 +172,7 @@ fn llg_grammar(params: &CommonCreateParams) -> Result<Option<TopLevelGrammar>> {
                 },
         }) => {
             log::debug!("using strict JSON schema");
-            json_to_llg(schema)?
+            json_to_llg(schema.clone())?
         }
         Some(ResponseFormat::LarkGrammar { lark_grammar }) => {
             log::debug!("using Lark grammar");
@@ -341,7 +341,7 @@ pub async fn route_chat_completions(
     if request.tools.len() > 0 {
         let schema = tools_to_schema(&request.tools);
         log::debug!("tools schema: {}", serde_json::to_string_pretty(&schema)?);
-        let grammar = json_to_llg(&schema)?;
+        let grammar = json_to_llg(schema)?;
         let (mut builder, prev_root) = GrammarBuilder::from_grammar(grammar);
         let schema_option = if let Some(n) = app_state.json_start_token_name.as_ref() {
             let tool_tag = builder.special_token(n);
@@ -388,8 +388,8 @@ pub async fn route_chat_completions(
     mk_req_info(&app_state, chat_history, &request.params, true, false).await
 }
 
-fn json_to_llg(schema: &Value) -> Result<TopLevelGrammar> {
-    let opts = JsonCompileOptions { compact: false };
+fn json_to_llg(schema: Value) -> Result<TopLevelGrammar> {
+    let opts = JsonCompileOptions::default();
     opts.json_to_llg(schema)
         .map_err(|e| anyhow!("error compiling JSON schema to LLG: {}", e))
 }
