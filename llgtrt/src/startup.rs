@@ -202,6 +202,7 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
         .route("/v1/completions", post(routes::route_completions))
         .route("/v1/chat/completions", post(routes::route_chat_completions))
         .route("/v1/health/live", get(routes::live_check))
+        .route("/v1/health/model", get(routes::model_check))
         .route("/v1/health/ready", get(routes::ready_check))
         .route("/v1/run", post(routes::route_llguidance))
         .route("/guidance", post(routes::route_llguidance))

@@ -419,6 +419,10 @@ impl AsyncExecutor {
         Ok((res, tok_env, chat_builder))
     }
 
+    pub fn can_enqueue_request(&self) -> bool {
+        self.executor.can_enqueue_request()
+    }
+
     pub fn add_request(
         &mut self,
         init: RequestInit,

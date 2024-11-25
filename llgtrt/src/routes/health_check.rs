@@ -9,6 +9,7 @@ use axum::{
 use serde_json::{json, Value};
 
 use crate::{
+    async_exec::AsyncExecutor,
     error::AppError,
     routes::{completions, openai::CompletionCreateParams},
     state::AppState,
@@ -18,7 +19,18 @@ pub async fn ready_check() {
     log::info!("ready_check -> all good");
 }
 
-pub async fn live_check(
+pub async fn live_check() -> Result<Response, AppError> {
+    let can_enq = AsyncExecutor::lock().can_enqueue_request();
+    if can_enq {
+        log::info!("live_check -> all good");
+        Ok((StatusCode::OK, "Check complete").into_response())
+    } else {
+        log::error!("live_check -> failed");
+        Ok((StatusCode::INTERNAL_SERVER_ERROR, "Check failed").into_response())
+    }
+}
+
+pub async fn model_check(
     headers: HeaderMap,
     State(app_state): State<Arc<AppState>>,
 ) -> Result<Response, AppError> {
@@ -46,7 +58,6 @@ pub async fn live_check(
             );
             Ok((StatusCode::INTERNAL_SERVER_ERROR, "Check failed").into_response())
         }
-        
     } else {
         log::error!(
             "Liveness check failed with status code: {}; body {}",
