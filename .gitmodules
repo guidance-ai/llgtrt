@@ -1,6 +1,3 @@
-[submodule "toktrie"]
-	path = toktrie
-	url = https://github.com/microsoft/toktrie
 [submodule "llguidance"]
 	path = llguidance
 	url = https://github.com/microsoft/llguidance

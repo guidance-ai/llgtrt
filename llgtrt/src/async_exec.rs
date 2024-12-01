@@ -1,5 +1,5 @@
 use anyhow::{ensure, Result};
-use llguidance_parser::Constraint;
+use llguidance::Constraint;
 use rayon::prelude::*;
 use std::{
     any::Any,
@@ -127,7 +127,7 @@ impl PendingSeq {
             llg.compute_mask()?
         } else {
             // if we're still in prompt
-            if !llg.has_current_step_result() {
+            if llg.step_result().sample_mask.is_none() {
                 // first time, compute the mask
                 llg.compute_mask()?
             } else {

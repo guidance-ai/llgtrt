@@ -1,6 +1,6 @@
 use crate::routes::api_ext::LlgLogLevel;
 use anyhow::Result;
-use llguidance_parser::{
+use llguidance::{
     api::{ParserLimits, TopLevelGrammar},
     Constraint, Logger, TokenParser,
 };

@@ -3,23 +3,23 @@ members = [
     "trtllm_rs",
     "llgtrt",
     "llguidance/parser",
-    "llguidance/sample_parser",
-    "llguidance/rust",
-    "toktrie/core",
-    "toktrie/hf_tokenizers",
+    "llguidance/toktrie",
+    "llguidance/toktrie_hf_tokenizers",
     "derivre",
 ]
 exclude = [
-    "llguidance/rust",
+    "llguidance",
 ]
 resolver = "2"
 
 [profile.release]
 # debug = 1
 
-[patch.'https://github.com/microsoft/toktrie']
-toktrie = { path = "toktrie/core" }
-toktrie_hf_tokenizers = { path = "toktrie/hf_tokenizers" }
-
 [patch.'https://github.com/microsoft/derivre']
 derivre = { path = "derivre" }
+
+[workspace.dependencies]
+toktrie = { path = "llguidance/toktrie" }
+llguidance = { path = "llguidance/parser" }
+toktrie_hf_tokenizers = { path = "llguidance/toktrie_hf_tokenizers" }
+trtllm_rs = { path = "trtllm_rs" }

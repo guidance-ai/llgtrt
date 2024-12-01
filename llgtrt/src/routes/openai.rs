@@ -1,5 +1,5 @@
 use super::api_ext::LlgLogLevel;
-use llguidance_parser::api::TopLevelGrammar;
+use llguidance::api::TopLevelGrammar;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
 use toktrie::{TokTrie, TokenId};

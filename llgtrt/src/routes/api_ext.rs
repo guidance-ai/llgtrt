@@ -1,4 +1,4 @@
-use llguidance_parser::api::TopLevelGrammar;
+use llguidance::api::TopLevelGrammar;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 

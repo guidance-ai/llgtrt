@@ -12,13 +12,13 @@ clap = { version = "4.4.7", features = ["derive"] }
 serde = { version = "1.0.190", features = ["derive"] }
 serde_json = "1.0.108"
 uuid = { version = "1.6.1", features = ["v4"] }
-trtllm_rs = { path = "../trtllm_rs" }
-toktrie = { path = "../toktrie/core" }
-toktrie_hf_tokenizers = { path = "../toktrie/hf_tokenizers" }
+trtllm_rs = { workspace = true }
 flexi_logger = "0.29.0"
 log = "0.4.22"
 rand = "0.8.5"
-llguidance_parser = { path = "../llguidance/parser" }
+llguidance = { workspace = true }
+toktrie = { workspace = true }
+toktrie_hf_tokenizers = { workspace = true }
 rayon = "1.10.0"
 futures-core = "0.3.30"
 minijinja = { version = "2.3.1", features = ["preserve_order", "loop_controls", "loader"] }
