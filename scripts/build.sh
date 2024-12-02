@@ -16,7 +16,7 @@ while test $# -gt 0; do
 done
 
 set -e
-if test -f TensorRT-LLM/README.md -a -f toktrie/README.md ; then
+if test -f TensorRT-LLM/README.md -a -f llguidance/README.md ; then
     :
 else
     echo "Cloning submodules"
