@@ -171,6 +171,10 @@ pub struct CommonCreateParams {
 
     #[serde(skip)]
     pub logprobs: Option<usize>,
+
+    /// Defaults to 0.5. We don't allow it in JSON requests, but can be set internally.
+    #[serde(skip)]
+    pub priority: Option<f32>,
 }
 
 #[derive(Serialize, Debug)]

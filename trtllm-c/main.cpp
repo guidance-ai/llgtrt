@@ -161,6 +161,7 @@ TlcStatus tlc_enqueue_request(TlcExecutor* ctx, TlcRequest const* request, TlcRe
         tle::Request req(std::move(tokens), p.max_new_tokens, p.streaming, samplingConfig, outputConfig);
         req.setNumReturnSequences(p.num_return_sequences);
         req.setClientId(request->client_req_id);
+        req.setPriority(p.priority);
         if (p.eos_token_id != UINT32_MAX)
             req.setEndId(p.eos_token_id);
         if (ctx->has_logits_post_processor && p.use_logits_post_processor)

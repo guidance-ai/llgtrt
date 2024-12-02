@@ -96,6 +96,7 @@ extern "C"
         float top_p;
         float frequency_penalty;
         float presence_penalty;
+        float priority;
         uint32_t top_k;
         uint32_t min_tokens;
         uint64_t seed;

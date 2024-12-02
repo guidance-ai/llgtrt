@@ -56,6 +56,7 @@ impl Default for RequestParams {
             presence_penalty: 0.0,
             frequency_penalty: 0.0,
             top_k: 0,
+            priority: 0.5, // kDefaultPriority
             min_tokens: 1,
             eos_token_id: u32::MAX,
             seed: u64::MAX,

@@ -111,6 +111,10 @@ fn req_params_from_openai(params: &CommonCreateParams) -> Result<RequestParams> 
         ..Default::default()
     };
 
+    if let Some(prio) = params.priority {
+        r.priority = prio;
+    }
+
     if let Some(seed) = params.seed {
         r.seed = seed;
     } else {
