@@ -264,7 +264,7 @@ def main():
         PROMPT_SIZE = 40_000
         NUM_REPS = 1
         NUM_JOKES = 100
-        MAX_TOKENS = 4000
+        MAX_TOKENS = 400
         one_round()
         return
 
