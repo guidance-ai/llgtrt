@@ -91,6 +91,10 @@ curl -X POST "${TRT_API_BASE}chat/completions" \
     curl -v "${TRT_API_BASE}health/live"
     ;;
 
+   health)
+    curl -v "${TRT_API_BASE}health/model"
+    ;;
+
    ready)
     curl -v "${TRT_API_BASE}health/ready"
     ;;

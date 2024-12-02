@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import requests
 import os
 import threading
@@ -247,7 +249,7 @@ grammar = r"""
 
 
 def main():
-    random.seed(0)
+    # random.seed(0)
     parser = argparse.ArgumentParser()
     parser.add_argument("--max_threads", type=int, default=0)
     parser.add_argument("--sessions", type=int, default=0)
@@ -259,6 +261,7 @@ def main():
         LLG = True
         NUM_THREADS = args.sessions
         PROMPT_SIZE = 2600
+        PROMPT_SIZE = 40_000
         NUM_REPS = 1
         NUM_JOKES = 100
         MAX_TOKENS = 4000

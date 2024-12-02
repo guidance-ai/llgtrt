@@ -34,11 +34,13 @@ pub async fn model_check(
     headers: HeaderMap,
     State(app_state): State<Arc<AppState>>,
 ) -> Result<Response, AppError> {
-    let req: CompletionCreateParams = serde_json::from_value(json!({
+    let mut req: CompletionCreateParams = serde_json::from_value(json!({
         "model": "model",
         "prompt": "Hi",
         "max_tokens": 2
     }))?;
+    // set very high priority for this request, so that it returns quickly
+    req.params.priority = Some(10.0);
     let resp = completions::route_completions(headers, State(app_state), Json(req)).await?;
     let status = resp.status();
     let body = axum::body::to_bytes(resp.into_body(), 1024 * 1024).await?;
