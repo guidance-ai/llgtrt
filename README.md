@@ -15,7 +15,7 @@ The sampling can be constrained by the [Low-Level Guidance library](https://gith
 
 There is no significant startup cost for all realistic sizes of grammars (no measurable impact on time to first token (TTFT)). The overhead on generation speed (median time between tokens (TBT)) is typically 1-3%. The mask computation takes on the order of 1 ms of single-core CPU time per token per sequence in the batch. Thus, with 16 cores and a TBT of around 10 ms, batch sizes of up to 160 are not CPU-bound. Typically, the unconstrained TBT is higher at such batch sizes, and more cores are available, so batch size is not a problem in production.
 
-This approach differs from [Outlines](https://github.com/dottxt-ai/outlines) (which pre-computes masks, resulting in a startup cost and limits on schema complexity) and is more similar in spirit to [llama.cpp grammars](https://github.com/ggerganov/llama.cpp/blob/master/grammars/README.md), though it is much faster due to the use of a custom lexer with [derivative-based regexes](https://github.com/microsoft/derivre), an Earley parser, and a [highly optimized](https://github.com/microsoft/toktrie/blob/main/implementation.md) token prefix tree.
+This approach differs from [Outlines](https://github.com/dottxt-ai/outlines) (which pre-computes masks, resulting in a startup cost and limits on schema complexity) and is more similar in spirit to [llama.cpp grammars](https://github.com/ggerganov/llama.cpp/blob/master/grammars/README.md), though it is much faster due to the use of a custom lexer with [derivative-based regexes](https://github.com/microsoft/derivre), an Earley parser, and a [highly optimized](https://github.com/microsoft/llguidance/blob/main/docs/toktrie.md) token prefix tree.
 
 ## Requirements
 
