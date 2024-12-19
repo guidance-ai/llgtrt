@@ -7,11 +7,13 @@ use axum::middleware::{self, Next};
 use axum::response::Response;
 use axum::routing::{get, post};
 use axum::Router;
+use llguidance::earley::SlicedBiasComputer;
+use llguidance::ParserFactory;
+use toktrie::InferenceCapabilities;
 use trtllm_rs::{ClientReqId, ExecutorInit, RequestInit, RequestParams};
 
 use crate::async_exec::AsyncExecutor;
 use crate::config::{config_info, CliConfig, LlgTrtConfig};
-use crate::constraint_mgr::ConstraintMgr;
 use crate::jsonutil::json5_to_string;
 use crate::state::AppState;
 use crate::{jsonutil, routes};
@@ -146,7 +148,17 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
 
     // we only get here on rank 0
 
-    let constraint_mgr = ConstraintMgr::new(tok_env.clone(), tok_env.clone(), &config.llguidance)?;
+    let mut parser_factory = ParserFactory::new(
+        &tok_env,
+        InferenceCapabilities {
+            ff_tokens: false, // not supported yet
+            backtrack: false, // unlikely
+            ..Default::default()
+        },
+        &SlicedBiasComputer::general_slices(),
+    );
+    *parser_factory.limits_mut() = config.llguidance.limits.clone();
+    parser_factory.set_stderr_log_level(config.llguidance.log_level);
 
     if let Some(t) = config.tokenizer.json_start_token.as_ref() {
         ensure!(
@@ -168,7 +180,7 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
         tok_env,
         next_client_req_id: std::sync::atomic::AtomicUsize::new(1000),
         chat_builder,
-        constraint_mgr,
+        parser_factory,
     };
 
     // warmup request

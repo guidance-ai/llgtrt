@@ -1,4 +1,5 @@
-use crate::{chat::ChatBuilder, constraint_mgr::ConstraintMgr};
+use crate::chat::ChatBuilder;
+use llguidance::ParserFactory;
 use toktrie::{TokEnv, TokenId};
 
 // there's generally an Arc() around this
@@ -10,7 +11,7 @@ pub struct AppState {
     pub json_start_token_name: Option<String>,
     pub next_client_req_id: std::sync::atomic::AtomicUsize,
     pub chat_builder: ChatBuilder,
-    pub constraint_mgr: ConstraintMgr,
+    pub parser_factory: ParserFactory,
 }
 
 impl AppState {

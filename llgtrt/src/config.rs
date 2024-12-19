@@ -1,7 +1,8 @@
 use clap::Parser;
+use llguidance::api::ParserLimits;
 use serde::{Deserialize, Serialize};
 
-use crate::{constraint_mgr::LlgConfig, tokenizer::TokenizerConfig};
+use crate::tokenizer::TokenizerConfig;
 
 const CONFIG_INFO: &str = include_str!("config_info.json");
 pub fn config_info() -> serde_json::Value {
@@ -69,6 +70,24 @@ pub struct LlgTrtConfig {
 
     /// Configuration for the LLGuidance constraint library
     pub llguidance: LlgConfig,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct LlgConfig {
+    /// Override any of the parser limits.
+    pub limits: ParserLimits,
+
+    /// Log level which goes to stderr. In-memory logs per-sequence are managed by ConstraintInit.log_level.
+    pub log_level: u32,
+}
+
+impl Default for LlgConfig {
+    fn default() -> Self {
+        Self {
+            limits: ParserLimits::default(),
+            log_level: 1,
+        }
+    }
 }
 
 #[derive(Parser, Debug, Serialize, Deserialize)]

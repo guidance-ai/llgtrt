@@ -19,7 +19,6 @@ use uuid::Uuid;
 
 use crate::async_exec::{map_finish_reason, AsyncExecutor, StepResults};
 use crate::chat::ChatParams;
-use crate::constraint_mgr::ConstraintInit;
 use crate::error::AppError;
 use crate::routes::api_ext::{tools_to_schema, LlgLogLevel};
 use crate::routes::openai::{JsonSchemaOptions, ResponseFormat, ToolChoice};
@@ -214,11 +213,15 @@ async fn mk_req_info(
 
     let llg = if let Some(grm) = llg_grammar(params)? {
         // println!("grammar: {}", serde_json::to_string(&grm).unwrap());
-        let mut llg = app_state.constraint_mgr.new_constraint(ConstraintInit {
-            grammar: grm,
-            is_chat,
-            log_level: params.llg_log_level,
-        })?;
+        let parser = app_state
+            .parser_factory
+            .create_parser_ext(grm, params.llg_log_level.to_log_level())?;
+
+        let mut llg = Constraint::new(parser);
+
+        if params.llg_log_level.has_json() {
+            llg.log_json_progress = true;
+        }
 
         // temperature handled by logits processing - this has to be 1.0
         // to avoid double-application of temperature
