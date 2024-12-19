@@ -137,8 +137,8 @@ fn validate_compl(req: &CompletionCreateParams) -> Result<()> {
 fn validate_chat(req: &ChatCompletionCreateParams) -> Result<()> {
     let _ = req_params_from_openai(&req.params)?;
     ensure!(
-        req.tool_choice == ToolChoice::Simple(ToolChoiceOption::Auto),
-        "only 'auto' option is currently supported for tool_choice"
+        matches!(req.tool_choice, ToolChoice::Simple(_)),
+        "only simple options are currently supported for tool_choice"
     );
     ensure!(
         req.tools.is_empty() || req.params.response_format.is_none(),
@@ -232,11 +232,16 @@ async fn mk_req_info(
 
         req_params.use_logits_post_processor = true;
 
-        if is_chat {
-            tokens.extend_from_slice(&llg.process_prompt(vec![]));
-        } else {
-            tokens = llg.process_prompt(tokens);
-        }
+        // If we do that, we need to make sure we return the tokens forced
+        // by the grammar to the user. Currently we don't have infra for that,
+        // so instead we just start the parser without the prompt.
+        //
+        // if is_chat {
+        //     tokens.extend_from_slice(&llg.process_prompt(vec![]));
+        // } else {
+        //     tokens = llg.process_prompt(tokens);
+        // }
+        llg.start_without_prompt();
 
         let mut r = vec![Box::new(llg)];
         while r.len() < req_params.num_return_sequences as usize {
