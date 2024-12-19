@@ -13,7 +13,7 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
 ENV RUSTUP_HOME=/usr/local/rustup \
     CARGO_HOME=/usr/local/cargo \
     PATH=/usr/local/cargo/bin:$PATH \
-    RUST_VERSION=1.81.0
+    RUST_VERSION=1.83.0
 
 RUN curl https://sh.rustup.rs -sSf | sh -s -- \
      -y --no-modify-path --profile minimal --default-toolchain $RUST_VERSION
