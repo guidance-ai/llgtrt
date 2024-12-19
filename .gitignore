@@ -2,3 +2,5 @@ build
 tmp
 target
 model.cache
+__pycache__
+*.py[cod]

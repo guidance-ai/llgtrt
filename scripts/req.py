@@ -62,13 +62,16 @@ def send_stream(path: str, payload: dict) -> requests.Response | None:
         return None
 
 
-def joke_msg():
-    return messages(
-        "Ignore the text below.\n"
-        + gen_prompt(PROMPT_SIZE)
-        + "\n\n"
-        + "Now, please tell me a long joke."
-    )
+def joke_msg(prompt_size: int = PROMPT_SIZE):
+    if prompt_size:
+        return messages(
+            "Ignore the text below.\n"
+            + gen_prompt(prompt_size)
+            + "\n\n"
+            + "Now, please tell me a long joke."
+        )
+    else:
+        return messages("Tell me a long joke.")
 
 
 def llg_data():
@@ -83,17 +86,27 @@ def llg_data():
     }
 
 
-def req_data():
-    properties = {}
-    required = []
-    for idx in range(NUM_JOKES):
-        properties[f"joke_{idx}"] = {"type": "string"}
-        properties[f"rating_{idx}"] = {"type": "number"}
-        required.extend([f"joke_{idx}", f"rating_{idx}"])
-    return {
+def req_data(
+    max_tokens: int = MAX_TOKENS,
+    llg: bool = LLG,
+    temperature: float = 0.8,
+    prompt_size: int = PROMPT_SIZE,
+):
+    r = {
         "model": "model",
-        "messages": joke_msg(),
-        ("response_format" if LLG else "ignore_me"): {
+        "messages": joke_msg(prompt_size=prompt_size),
+        # "llg_log_level": "json",
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+    }
+    if llg:
+        properties = {}
+        required = []
+        for idx in range(NUM_JOKES):
+            properties[f"joke_{idx}"] = {"type": "string"}
+            properties[f"rating_{idx}"] = {"type": "number"}
+            required.extend([f"joke_{idx}", f"rating_{idx}"])
+        r["response_format"] = {
             "type": "json_schema",
             "json_schema": {
                 "strict": True,
@@ -104,11 +117,8 @@ def req_data():
                     "required": required,
                 },
             },
-        },
-        # "llg_log_level": "json",
-        "max_tokens": MAX_TOKENS,
-        "temperature": 0.8,
-    }
+        }
+    return r
 
 
 class Results:
@@ -125,7 +135,7 @@ class Results:
         self.completion_tokens = self.usage.get("completion_tokens", 0)
         self.completion_tokens2 = len(self.tbt)
         self.text = "".join(self.text_chunks)
-        print(self.text)
+        # print(self.text)
         if not self.tbt:
             self.avg_tbt = 0
             self.med_tbt = 0
@@ -248,6 +258,8 @@ grammar = r"""
 """
 
 
+
+
 def main():
     # random.seed(0)
     parser = argparse.ArgumentParser()
@@ -267,7 +279,6 @@ def main():
         MAX_TOKENS = 400
         one_round()
         return
-
 
     if args.max_threads > 0:
         thr = 1
@@ -322,4 +333,5 @@ def main():
             print(r.error)
 
 
-main()
+if __name__ == "__main__":
+    main()
