@@ -2,6 +2,7 @@
 members = [
     "trtllm_rs",
     "llgtrt",
+    "llguidance/json_stats",
     "llguidance/parser",
     "llguidance/toktrie",
     "llguidance/toktrie_hf_tokenizers",

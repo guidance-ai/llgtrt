@@ -7,8 +7,8 @@ use axum::response::sse::{Event, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 use futures_core::Stream;
-use llguidance::api::{RegexSpec, TopLevelGrammar};
-use llguidance::{lark_to_llguidance, Constraint, GrammarBuilder, JsonCompileOptions};
+use llguidance::api::{GrammarWithLexer, TopLevelGrammar};
+use llguidance::{lark_to_llguidance, Constraint, JsonCompileOptions};
 use serde_json::{json, Value};
 use std::fmt::Display;
 use std::sync::Arc;
@@ -345,28 +345,24 @@ pub async fn route_chat_completions(
     if request.tools.len() > 0 {
         let schema = tools_to_schema(&request.tools);
         log::debug!("tools schema: {}", serde_json::to_string_pretty(&schema)?);
-        let grammar = json_to_llg(schema)?;
-        let (mut builder, prev_root) = GrammarBuilder::from_grammar(grammar);
-        let schema_option = if let Some(n) = app_state.json_start_token_name.as_ref() {
-            let tool_tag = builder.special_token(n);
-            builder.join(&[tool_tag, prev_root])
-        } else {
-            prev_root
-        };
-        let free_flow_option = builder.lexeme(RegexSpec::Regex("(\n|.)*".to_string()), false);
-        let new_root = match &request.tool_choice {
-            ToolChoice::Simple(ToolChoiceOption::None) => builder.select(&[free_flow_option]),
-            ToolChoice::Simple(ToolChoiceOption::Auto) => {
-                builder.select(&[schema_option, free_flow_option])
-            }
-            ToolChoice::Simple(ToolChoiceOption::Required) | ToolChoice::Advanced(_) => {
-                builder.select(&[schema_option])
-            }
-        };
-        builder.set_start_node(new_root);
-        let grammar = builder.finalize()?;
 
-        log::debug!("tools grammar: {}", serde_json::to_string_pretty(&grammar)?);
+        let lark_grm_templ = match &request.tool_choice {
+            ToolChoice::Simple(ToolChoiceOption::None) => r"start: /(.|\n)*/",
+            ToolChoice::Simple(ToolChoiceOption::Auto) => r"start: /[^{](.|\n)*/ | {json_start} @1",
+            ToolChoice::Simple(ToolChoiceOption::Required) | ToolChoice::Advanced(_) => {
+                r"start: {json_start} @1"
+            }
+        };
+
+        let json_start = app_state.json_start_token_name.as_ref().map_or("", |s| s);
+        let lark_grm = lark_grm_templ.replace("{json_start}", json_start);
+
+        let mut grammar = TopLevelGrammar::from_lark(lark_grm);
+        grammar
+            .grammars
+            .push(GrammarWithLexer::from_json_schema(schema));
+
+        log::debug!("tools grammar: {}", serde_json::to_string(&grammar)?);
         request.params.response_format = Some(ResponseFormat::Llguidance { grammar });
     }
 
