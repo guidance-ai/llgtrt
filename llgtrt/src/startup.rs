@@ -156,7 +156,8 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
             ..Default::default()
         },
         &SlicedBiasComputer::general_slices(),
-    );
+    )
+    .expect("Error creating parser factory");
     *parser_factory.limits_mut() = config.llguidance.limits.clone();
     parser_factory.set_stderr_log_level(config.llguidance.log_level);
 
