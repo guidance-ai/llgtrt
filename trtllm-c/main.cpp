@@ -92,11 +92,12 @@ TlcStatus tlc_init(TlcInitParams const* params, TlcExecutor** res)
                 : std::nullopt,
             ep->kv_cache_host_memory_bytes, ep->kv_cache_onboard_blocks);
 
-        auto schedulerConfig
-            = tle::SchedulerConfig(ep->guaranteed_no_evict ? tle::CapacitySchedulerPolicy::kGUARANTEED_NO_EVICT
-                                                           : tle::CapacitySchedulerPolicy::kMAX_UTILIZATION
-                // tle::ContextChunkingPolicy::kFIRST_COME_FIRST_SERVED // default?
-            );
+        tle::DynamicBatchConfig dynamicBatchConfig(ep->enable_batch_size_tuning, ep->enable_max_num_tokens_tuning);
+
+        auto policy = ep->guaranteed_no_evict ? tle::CapacitySchedulerPolicy::kGUARANTEED_NO_EVICT
+                                              : tle::CapacitySchedulerPolicy::kMAX_UTILIZATION;
+        auto chunking = tle::ContextChunkingPolicy::kFIRST_COME_FIRST_SERVED; // default?
+        auto schedulerConfig = tle::SchedulerConfig(policy, chunking, dynamicBatchConfig);
 
         executorConfig.setKvCacheConfig(kvConfig);
         executorConfig.setSchedulerConfig(schedulerConfig);

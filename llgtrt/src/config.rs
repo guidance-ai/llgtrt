@@ -39,6 +39,14 @@ pub struct TrtLlmRuntimeConfig {
 
     /// Host memory to use for KV cache
     pub kv_cache_host_memory_megabytes: usize,
+
+    /// Control automatic tuning of batch size
+    /// Defaults to true (unlike trtllm)
+    pub enable_batch_size_tuning: bool,
+
+    /// Control automatic tuning of max num tokens
+    /// Defaults to true (unlike trtllm)
+    pub enable_max_num_tokens_tuning: bool,
 }
 
 impl Default for TrtLlmRuntimeConfig {
@@ -52,6 +60,8 @@ impl Default for TrtLlmRuntimeConfig {
             enable_kv_cache_reuse: true,
             kv_cache_free_gpu_mem_fraction: 0.9,
             kv_cache_host_memory_megabytes: 0,
+            enable_batch_size_tuning: true,
+            enable_max_num_tokens_tuning: true,
         }
     }
 }

@@ -135,6 +135,8 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
 
     set_field!(enable_chunked_context);
     set_field!(enable_kv_cache_reuse);
+    set_field!(enable_batch_size_tuning);
+    set_field!(enable_max_num_tokens_tuning);
     set_field!(max_batch_size);
     set_field!(max_num_tokens);
     set_field!(max_queue_size);

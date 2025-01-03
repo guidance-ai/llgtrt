@@ -75,6 +75,10 @@ extern "C"
         int32_t sink_token_length;
         // defaults to false (prefix caching)
         bool enable_kv_cache_reuse;
+
+        // both default to false
+        bool enable_batch_size_tuning;
+        bool enable_max_num_tokens_tuning;
     } TlcEngineParams;
 
     typedef struct
