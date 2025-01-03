@@ -1,4 +1,4 @@
-FROM nvcr.io/nvidia/tensorrt:24.09-py3 AS llgtrt_dev
+FROM nvcr.io/nvidia/tensorrt:24.12-py3 AS llgtrt_dev
 
 RUN apt-get update
 RUN DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
@@ -47,7 +47,7 @@ RUN pip uninstall -y guidance
 
 # RUN pip install --upgrade transformers
 
-RUN cd /usr/local/lib/python3.10/dist-packages/tensorrt_llm/libs/ && \
+RUN cd /usr/local/lib/python3.12/dist-packages/tensorrt_llm/libs/ && \
     ln -s libnvinfer_plugin_tensorrt_llm.so libnvinfer_plugin_tensorrt_llm.so.10
 
 # dial down start banner a bit

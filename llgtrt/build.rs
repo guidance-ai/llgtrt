@@ -9,8 +9,12 @@ fn main() {
 
     for libs_path in &[
         "/usr/local/lib/python3.10/dist-packages/tensorrt_llm/libs",
+        "/usr/local/lib/python3.12/dist-packages/tensorrt_llm/libs",
         "/usr/local/cuda/lib64",
     ] {
+        if !std::path::Path::new(libs_path).exists() {
+            continue;
+        }
         println!("cargo:rustc-link-search=native={}", libs_path);
         println!("cargo:rustc-link-arg=-Wl,-rpath,{}", libs_path);
     }

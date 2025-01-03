@@ -156,10 +156,10 @@ TlcStatus tlc_enqueue_request(TlcExecutor* ctx, TlcRequest const* request, TlcRe
             samplingConfig.setTopK(p.top_k);
         if (p.min_tokens != 0)
             samplingConfig.setMinTokens(p.min_tokens);
+        samplingConfig.setNumReturnSequences(p.num_return_sequences);
 
         tle::VecTokens tokens(request->tokens, request->tokens + request->num_tokens);
         tle::Request req(std::move(tokens), p.max_new_tokens, p.streaming, samplingConfig, outputConfig);
-        req.setNumReturnSequences(p.num_return_sequences);
         req.setClientId(request->client_req_id);
         req.setPriority(p.priority);
         if (p.eos_token_id != UINT32_MAX)

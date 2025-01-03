@@ -35,5 +35,8 @@ async fn main() -> anyhow::Result<()> {
         env::var("TLLM_LOG_LEVEL").unwrap_or_default()
     );
 
+    log::info!("Setting NCCL_P2P_LEVEL=SYS; see https://github.com/NVIDIA/TensorRT-LLM/releases/tag/v0.16.0");
+    env::set_var("NCCL_P2P_LEVEL", "SYS");
+
     startup::run_server(config).await
 }

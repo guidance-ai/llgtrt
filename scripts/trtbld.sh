@@ -43,6 +43,9 @@ case "$1" in
             --use_paged_context_fmha enable \
             --max_batch_size 128
         cp $MODEL_SRC/tokenizer* $ENGINE_DIR
+        if [ $MODEL_TYPE = "llama" ]; then
+            cp model_configs/llama31/* $ENGINE_DIR
+        fi
         ;;
 
     *)
