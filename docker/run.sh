@@ -5,10 +5,15 @@ if [ -z "$PORT" ]; then
 fi
 
 if [ -z "$1" ]; then
-    echo "Usage: $0 /path/to/engine"
+    echo "Usage: $0 /path/to/engine [/path/to/lora/weights]"
     exit 1
 else
     ENGINE="$1"
+    shift
+fi
+
+if [ ! -z "$1" ]; then
+    LORADIR="$1"
     shift
 fi
 
@@ -19,10 +24,16 @@ else
     exit 1
 fi
 
+ora_volume=''
+if [ ! -z "$LORADIR" ]; then
+    lora_volume="--volume $LORADIR:/lora"
+fi
+
 set -e
 cd $(dirname $0)/..
 ./docker/drun.sh \
     --volume "$ENGINE":/engine \
+    ${lora_volume} \
     --publish $PORT:$PORT \
     llgtrt/llgtrt:latest \
     /usr/local/bin/launch-llgtrt.sh \

@@ -199,6 +199,7 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
                 ..Default::default()
             },
             client_req_id: ClientReqId::new(1),
+            lora_params: None,
             is_run: false,
         },
         vec![],

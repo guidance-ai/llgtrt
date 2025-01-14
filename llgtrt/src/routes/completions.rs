@@ -1,5 +1,5 @@
 //! https://platform.openai.com/docs/api-reference/completions/create
-use anyhow::{anyhow, bail, ensure, Result};
+use anyhow::{anyhow, bail, ensure, Result, Context};
 use async_stream::try_stream;
 use axum::extract::State;
 use axum::http::HeaderMap;
@@ -13,9 +13,12 @@ use serde_json::{json, Value};
 use std::fmt::Display;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::path::Path;
 use toktrie::TokEnv;
-use trtllm_rs::{ClientReqId, ReqId, RequestInit, RequestParams};
+use trtllm_rs::{ClientReqId, ReqId, RequestInit, RequestParams, LoraParams};
 use uuid::Uuid;
+use ndarray::{ArrayD, IxDyn};
+use half::bf16;
 
 use crate::async_exec::{map_finish_reason, AsyncExecutor, StepResults};
 use crate::chat::ChatParams;
@@ -121,6 +124,74 @@ fn req_params_from_openai(params: &CommonCreateParams) -> Result<RequestParams> 
     }
 
     Ok(r)
+}
+
+// Helper to convert an ArrayD between types
+fn convert_f32_to_bf16(input: ArrayD<f32>) -> Result<ArrayD<bf16>, ndarray::ShapeError> 
+{
+    let shape = input.shape().to_vec();
+    let dest_data: Vec<bf16> = input.iter().map(|&x| bf16::from_f32(x)).collect();
+    ArrayD::from_shape_vec(shape, dest_data)
+}
+
+fn load_lora_arrays<P: AsRef<Path>>(dir_path: P) -> Result<(ArrayD<bf16>, ArrayD<i32>)> {
+    // Construct paths for the files
+    let config_path = dir_path.as_ref().join("model.lora_config.npy");
+    let weights_path = dir_path.as_ref().join("model.lora_weights.npy");
+
+    // Read the config array
+    let config_array: ArrayD<i32> = ndarray_npy::read_npy(&config_path)
+        .with_context(|| format!("Failed to read config file at {:?}", config_path))?;
+
+    // Read the weights array
+    let weights_array: ArrayD<f32> = ndarray_npy::read_npy(&weights_path)
+        .with_context(|| format!("Failed to read weights file at {:?}", weights_path))?;
+
+    // Convert the weights array from f32 to bf16
+    let bf16_weights_array: ArrayD<bf16> = convert_f32_to_bf16(weights_array)
+        .with_context(|| "Failed to convert weights array")?;
+
+    Ok((bf16_weights_array, config_array))
+}
+
+// Removes size-1 dimensions from an ArrayD.  TensorRT requires us to squeeze the LoRA weights and config
+// before passing them along.
+fn squeeze<T>(array: ArrayD<T>) -> ArrayD<T> {
+    let original_shape = array.shape().to_vec();
+    let squeezed_shape: Vec<usize> = original_shape.into_iter().filter(|&dim| dim != 1).collect();
+    
+    // If there are no dimensions left, we return the array as-is
+    if squeezed_shape.is_empty() {
+        return array;
+    }
+    
+    // Reshape the array to the new squeezed shape
+    array.into_shape_with_order(IxDyn(&squeezed_shape)).expect("Failed to reshape array")
+}
+
+fn req_lora_params_from_openai(params: &CommonCreateParams) -> Result<Option<LoraParams>> {
+    if let Some(lora_id) = params.lora_id {
+        if let Some(lora_dir) = &params.lora_dir {
+            let base_path: &Path = Path::new("/lora");
+            let lora_path = base_path.join(lora_dir);
+            let (weights, config) = load_lora_arrays(lora_path)?;
+            let weights = squeeze(weights);
+            let config = squeeze(config);
+            return Ok(Some(LoraParams {
+                lora_id: lora_id,
+                weights: Some(weights),
+                config: Some(config),
+            }))
+        }
+
+        return Ok(Some(LoraParams {
+            lora_id: lora_id,
+            weights: None,
+            config: None,
+        }))
+    } else {
+        return Ok(None);
+    }
 }
 
 fn validate_compl(req: &CompletionCreateParams) -> Result<()> {
@@ -270,11 +341,14 @@ async fn mk_req_info(
 
     let n_forks = req_params.num_return_sequences;
 
+    let lora_params = req_lora_params_from_openai(params)?;
+
     let req_init = RequestInit {
         tokens,
         params: req_params,
         client_req_id,
         is_run,
+        lora_params: lora_params,
     };
     let prompt_tokens = req_init.tokens.len();
 

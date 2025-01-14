@@ -176,6 +176,14 @@ pub struct CommonCreateParams {
     /// Setting to higher value like 1.0 or 10.0 will make the request complete faster.
     #[serde(skip)]
     pub priority: Option<f32>,
+
+    /// The uint64 unique ID of the LoRA weights to apply.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lora_id: Option<u64>,
+
+    /// Name of the directory containing LoRA weights (weights and config)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lora_dir: Option<String>,
 }
 
 #[derive(Serialize, Debug)]

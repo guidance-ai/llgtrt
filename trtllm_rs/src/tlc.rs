@@ -1,12 +1,15 @@
 use crate::{ffi, TlcLogitsEntry};
 use anyhow::{ensure, Result};
+use half::{f16, bf16};
 use std::{
-    ffi::{CStr, CString},
+    ffi::{c_void, CStr, CString},
     fmt::Display,
+    ptr,
     hash::Hash,
     sync::atomic::AtomicU32,
     time::Duration,
 };
+use ndarray::ArrayD;
 
 pub type TokenId = u32;
 
@@ -93,12 +96,20 @@ impl ClientReqId {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct LoraParams {
+    pub lora_id: u64,
+    pub weights: Option<ArrayD<bf16>>,
+    pub config: Option<ArrayD<i32>>
+}
+
 #[derive(Debug, Clone)]
 pub struct RequestInit {
     pub tokens: Vec<TokenId>,
     pub client_req_id: ClientReqId,
     pub is_run: bool,
     pub params: RequestParams,
+    pub lora_params: Option<LoraParams>,
 }
 
 pub struct Executor {
@@ -169,6 +180,96 @@ impl Default for ffi::TlcEngineParams {
     }
 }
 
+impl Default for ffi::TlcShape {
+    fn default() -> Self {
+        ffi::TlcShape {
+            dims_ptr: ptr::null(),
+            num_dims: 0,
+        }
+    }
+}
+
+impl Default for ffi::TlcTensor {
+    fn default() -> Self {
+        ffi::TlcTensor {
+            data_type: 0,
+            data_ptr: ptr::null(),
+            shape: ffi::TlcShape::default(),
+        }
+    }
+}
+
+impl Default for ffi::TlcLoraParams {
+    fn default() -> Self {
+        ffi::TlcLoraParams {
+            lora_id: 0,
+            weights: ffi::TlcTensor::default(),
+            config: ffi::TlcTensor::default(),
+        }
+    }
+}
+
+/// These constants line up with the DataType enum in TensorRT's types.h
+const TLC_BOOL: i32 = 0;
+const TLC_U8: i32 = 1;
+const TLC_I8: i32 = 2;
+const TLC_I32: i32 = 3;
+const TLC_I64: i32 = 4;
+const TLC_BF16: i32 = 5;
+//const TLC_F8: i32 = 6;  // TODO: find a way to support F8 correctly through Rust.
+const TLC_F16: i32 = 7;
+const TLC_F32: i32 = 8;
+const TLC_UNKNOWN: i32 = 9;
+
+fn _tlc_get_data_type<T: 'static>() -> i32 {
+    if std::any::TypeId::of::<T>() == std::any::TypeId::of::<bool>() {
+        TLC_BOOL
+    } else if std::any::TypeId::of::<T>() == std::any::TypeId::of::<u8>() {
+        TLC_U8
+    } else if std::any::TypeId::of::<T>() == std::any::TypeId::of::<i8>() {
+        TLC_I8
+    } else if std::any::TypeId::of::<T>() == std::any::TypeId::of::<i32>() {
+        TLC_I32
+    } else if std::any::TypeId::of::<T>() == std::any::TypeId::of::<i64>() {
+        TLC_I64
+    } else if std::any::TypeId::of::<T>() == std::any::TypeId::of::<bf16>() {
+        TLC_BF16
+    } else if std::any::TypeId::of::<T>() == std::any::TypeId::of::<f16>() {
+        TLC_F16
+    } else if std::any::TypeId::of::<T>() == std::any::TypeId::of::<f32>() {
+        TLC_F32
+    } else {
+        TLC_UNKNOWN
+    }
+}
+
+fn _tlc_extract_arrayd<T: 'static>(array: ArrayD<T>) -> (ffi::TlcTensor, Vec<i64>, Vec<T>) 
+    where T: std::fmt::Debug
+{
+    let shape: Vec<i64> = array.shape().to_vec().iter().map(|&x| x as i64).collect();
+    
+    let ffi_shape = ffi::TlcShape {
+        dims_ptr: shape.as_ptr(),
+        num_dims: shape.len(),
+    };
+
+    // Get the values in pure vector form
+    let (data_vec, _offset) = array.into_raw_vec_and_offset();
+    let data_ptr = data_vec.as_ptr();
+    let void_data_ptr = data_ptr as *const c_void;
+
+    // Return the converted shape vector along with the converted Tensor to ensure that it outlives this function.
+    (
+        ffi::TlcTensor {
+            shape: ffi_shape,
+            data_ptr: void_data_ptr,
+            data_type: _tlc_get_data_type::<T>(),
+        },
+        shape,
+        data_vec
+    )
+}
+
 impl Executor {
     pub fn new(init: ExecutorInit) -> Result<(Executor, Responder)> {
         let cstr = CString::new(init.engine_path).unwrap();
@@ -200,12 +301,38 @@ impl Executor {
             init.tokens.len() > 0,
             "Request must have at least one token"
         );
-        let arg = ffi::TlcRequest {
+
+        // These declarations make sure that the shape and data vectors extracted from the tensors live long
+        // enough to survive the call to tlc_enqueue_request.  Otherwise the data we pass through to the C++
+        // layer will become invalid.
+        let _weights_shape: Vec<i64>;
+        let _weights_vec: Vec<bf16>;
+        let _config_shape: Vec<i64>;
+        let _config_vec: Vec<i32>;
+
+        let mut arg = ffi::TlcRequest {
             tokens: init.tokens.as_ptr() as *mut i32,
             num_tokens: init.tokens.len() as u32,
             params: init.params.clone(),
             client_req_id: init.client_req_id.0,
+            lora_params: ffi::TlcLoraParams::default(),
         };
+
+        if let Some(lora_params) = init.lora_params {
+            let mut lc = ffi::TlcLoraParams {
+                lora_id: lora_params.lora_id,
+                weights: ffi::TlcTensor::default(),
+                config: ffi::TlcTensor::default(),
+            };
+            if let Some(weights) = lora_params.weights {
+                (lc.weights, _weights_shape, _weights_vec) = _tlc_extract_arrayd(weights);
+            }
+            if let Some(config) = lora_params.config {
+                (lc.config, _config_shape, _config_vec) = _tlc_extract_arrayd(config);
+            }
+            arg.lora_params = lc;
+        }
+
         let mut req_id = 0;
         let err = unsafe { ffi::tlc_enqueue_request(self.inner, &arg, &mut req_id) };
         map_err(err, ReqId(req_id), "tlc_enqueue_request")
