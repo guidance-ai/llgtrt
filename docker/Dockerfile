@@ -6,7 +6,7 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     cmake curl libjpeg-dev libpng-dev strace \
     llvm-dev libclang-dev clang ccache apache2-utils git-lfs \
     screen bsdmainutils pip python3-dev python3-venv python-is-python3 \
-    pkg-config software-properties-common
+    pkg-config software-properties-common linux-tools-common
 
 #    openmpi-bin libopenmpi-dev
 
