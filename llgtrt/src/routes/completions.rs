@@ -605,6 +605,8 @@ impl ReqInfo {
                 delta: ChatCompletionChunkDelta {
                     role: Some(Role::Assistant),
                     content: Some(resp.text),
+                    refusal: None,
+                    tool_calls: None,
                 },
                 finish_reason: resp.finish_reason,
                 llg_logs: if resp.logs.is_empty() {
@@ -758,6 +760,8 @@ async fn completions(mut client: ReqInfo) -> Result<Json<Value>, AppError> {
                 message: ChatCompletionMessage {
                     role: Role::Assistant,
                     content: Some(String::from_utf8_lossy(&fork.text).to_string()),
+                    refusal: None,
+                    tool_calls: None,
                 },
                 finish_reason: fork.stop_reason.map(map_finish_reason),
                 llg_logs: if fork.logs.is_empty() {
