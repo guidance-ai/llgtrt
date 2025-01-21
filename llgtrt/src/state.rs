@@ -12,6 +12,7 @@ pub struct AppState {
     pub next_client_req_id: std::sync::atomic::AtomicUsize,
     pub chat_builder: ChatBuilder,
     pub parser_factory: ParserFactory,
+    pub lora_root: Option<String>,
 }
 
 impl AppState {

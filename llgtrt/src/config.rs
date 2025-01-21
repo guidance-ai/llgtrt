@@ -145,6 +145,10 @@ pub struct CliConfig {
     #[arg(long, help_heading = CONFIG_OPTIONS)]
     pub chat_template: Option<String>,
 
+    /// Root directory for LoRA weights; defaults to None (LoRA disabled)
+    #[arg(long, help_heading = CONFIG_OPTIONS)]
+    pub lora_root: Option<String>,
+
     /// Print the merged configuration and exit
     #[arg(long, help_heading = CONFIG_OPTIONS)]
     pub print_config: bool,

@@ -24,9 +24,11 @@ else
     exit 1
 fi
 
-ora_volume=''
+lora_volume=''
+lora_arg=''
 if [ ! -z "$LORADIR" ]; then
     lora_volume="--volume $LORADIR:/lora"
+    lora_arg="--lora-root /lora"
 fi
 
 set -e
@@ -39,4 +41,5 @@ cd $(dirname $0)/..
     /usr/local/bin/launch-llgtrt.sh \
         /engine \
         --port $PORT \
+        ${lora_arg} \
         "$@"

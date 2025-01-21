@@ -184,6 +184,7 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
         next_client_req_id: std::sync::atomic::AtomicUsize::new(1000),
         chat_builder,
         parser_factory,
+        lora_root: cli_config.lora_root,
     };
 
     // warmup request

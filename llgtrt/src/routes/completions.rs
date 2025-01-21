@@ -169,26 +169,30 @@ fn squeeze<T>(array: ArrayD<T>) -> ArrayD<T> {
     array.into_shape_with_order(IxDyn(&squeezed_shape)).expect("Failed to reshape array")
 }
 
-fn req_lora_params_from_openai(params: &CommonCreateParams) -> Result<Option<LoraParams>> {
-    if let Some(lora_id) = params.lora_id {
-        if let Some(lora_dir) = &params.lora_dir {
-            let base_path: &Path = Path::new("/lora");
-            let lora_path = base_path.join(lora_dir);
-            let (weights, config) = load_lora_arrays(lora_path)?;
-            let weights = squeeze(weights);
-            let config = squeeze(config);
+fn req_lora_params_from_openai(params: &CommonCreateParams, lora_root: Option<String>) -> Result<Option<LoraParams>> {
+    if let Some(lora_root) = lora_root {
+        if let Some(lora_id) = params.lora_id {
+            if let Some(lora_dir) = &params.lora_dir {
+                let base_path: &Path = Path::new(lora_root.as_str());
+                let lora_path = base_path.join(lora_dir);
+                let (weights, config) = load_lora_arrays(lora_path)?;
+                let weights = squeeze(weights);
+                let config = squeeze(config);
+                return Ok(Some(LoraParams {
+                    lora_id: lora_id,
+                    weights: Some(weights),
+                    config: Some(config),
+                }))
+            }
+
             return Ok(Some(LoraParams {
                 lora_id: lora_id,
-                weights: Some(weights),
-                config: Some(config),
+                weights: None,
+                config: None,
             }))
+        } else {
+            return Ok(None);
         }
-
-        return Ok(Some(LoraParams {
-            lora_id: lora_id,
-            weights: None,
-            config: None,
-        }))
     } else {
         return Ok(None);
     }
@@ -341,7 +345,7 @@ async fn mk_req_info(
 
     let n_forks = req_params.num_return_sequences;
 
-    let lora_params = req_lora_params_from_openai(params)?;
+    let lora_params = req_lora_params_from_openai(params, app_state.lora_root.clone())?;
 
     let req_init = RequestInit {
         tokens,
