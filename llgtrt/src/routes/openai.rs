@@ -178,12 +178,15 @@ pub struct CommonCreateParams {
     pub priority: Option<f32>,
 
     /// The uint64 unique ID of the LoRA weights to apply.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub lora_id: Option<u64>,
+    //#[serde(skip_serializing_if = "Option::is_none")]
+    //pub lora_id: Option<u64>,
 
-    /// Name of the directory containing LoRA weights (weights and config)
+    /// LoRA model name
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub lora_dir: Option<String>,
+    pub lora_model: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auto_load_lora_cache: Option<bool>,
 }
 
 #[derive(Serialize, Debug)]

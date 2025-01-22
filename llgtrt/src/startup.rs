@@ -17,6 +17,7 @@ use crate::config::{config_info, CliConfig, LlgTrtConfig};
 use crate::jsonutil::json5_to_string;
 use crate::state::AppState;
 use crate::{jsonutil, routes};
+use crate::lora::LoraCache;
 
 async fn auth_middleware(
     req: Request<Body>,
@@ -185,6 +186,7 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
         chat_builder,
         parser_factory,
         lora_root: cli_config.lora_root,
+        lora_cache: LoraCache::new(),
     };
 
     // warmup request

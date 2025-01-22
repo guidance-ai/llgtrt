@@ -8,3 +8,4 @@ pub mod state;
 mod async_exec;
 pub mod logging;
 pub mod jsonutil;
+pub mod lora;

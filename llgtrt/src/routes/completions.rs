@@ -26,6 +26,7 @@ use crate::error::AppError;
 use crate::routes::api_ext::{tools_to_schema, LlgLogLevel};
 use crate::routes::openai::{JsonSchemaOptions, ResponseFormat, ToolChoice};
 use crate::state::AppState;
+use crate::lora::LoraCache;
 
 use super::api_ext::{
     InitialRunResponse, RunForkResponse, RunRequest, RunResponse, RunUsageResponse,
@@ -169,32 +170,33 @@ fn squeeze<T>(array: ArrayD<T>) -> ArrayD<T> {
     array.into_shape_with_order(IxDyn(&squeezed_shape)).expect("Failed to reshape array")
 }
 
-fn req_lora_params_from_openai(params: &CommonCreateParams, lora_root: Option<String>) -> Result<Option<LoraParams>> {
+fn req_lora_params_from_openai(params: &CommonCreateParams, lora_root: Option<String>, lora_cache: &LoraCache) -> Result<Option<LoraParams>> {
     if let Some(lora_root) = lora_root {
-        if let Some(lora_id) = params.lora_id {
-            if let Some(lora_dir) = &params.lora_dir {
-                let base_path: &Path = Path::new(lora_root.as_str());
-                let lora_path = base_path.join(lora_dir);
-                let (weights, config) = load_lora_arrays(lora_path)?;
-                let weights = squeeze(weights);
-                let config = squeeze(config);
-                return Ok(Some(LoraParams {
-                    lora_id: lora_id,
+        if let Some(lora_model) = &params.lora_model {
+            let base_path: &Path = Path::new(lora_root.as_str());
+            let lora_path = base_path.join(lora_model);
+            let (weights, config) = load_lora_arrays(lora_path)?;
+            let weights = squeeze(weights);
+            let config = squeeze(config);
+            let auto_load_lora_cache = params.auto_load_lora_cache.unwrap_or(true);
+            if auto_load_lora_cache {
+                Ok(Some(LoraParams {
+                    lora_id: lora_cache.resolve_id(lora_model),
                     weights: Some(weights),
                     config: Some(config),
                 }))
+            } else {
+                Ok(Some(LoraParams {
+                    lora_id: lora_cache.resolve_id(lora_model),
+                    weights: None,
+                    config: None,
+                }))
             }
-
-            return Ok(Some(LoraParams {
-                lora_id: lora_id,
-                weights: None,
-                config: None,
-            }))
         } else {
-            return Ok(None);
+            Ok(None)
         }
     } else {
-        return Ok(None);
+        Ok(None)
     }
 }
 
@@ -345,14 +347,17 @@ async fn mk_req_info(
 
     let n_forks = req_params.num_return_sequences;
 
-    let lora_params = req_lora_params_from_openai(params, app_state.lora_root.clone())?;
-
     let req_init = RequestInit {
         tokens,
         params: req_params,
         client_req_id,
         is_run,
-        lora_params: lora_params,
+        lora_params: if let Some(lora_params) = req_lora_params_from_openai(params, app_state.lora_root.clone(), &app_state.lora_cache)? {
+            // Setup the correct Lora parameters here
+            Some(lora_params)
+        } else {
+            None
+        }
     };
     let prompt_tokens = req_init.tokens.len();
 
