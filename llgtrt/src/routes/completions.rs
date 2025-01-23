@@ -15,6 +15,7 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::path::Path;
 use toktrie::TokEnv;
+use tokio::sync::mpsc::UnboundedReceiver;
 use trtllm_rs::{ClientReqId, ReqId, RequestInit, RequestParams, LoraParams};
 use uuid::Uuid;
 use ndarray::{ArrayD, IxDyn};
@@ -24,7 +25,7 @@ use crate::async_exec::{map_finish_reason, AsyncExecutor, StepResults};
 use crate::chat::ChatParams;
 use crate::error::AppError;
 use crate::routes::api_ext::{tools_to_schema, LlgLogLevel};
-use crate::routes::openai::{JsonSchemaOptions, ResponseFormat, ToolChoice};
+use crate::routes::openai::{JsonSchemaOptions, ResponseFormat, ToolChoice, LoadLoraWeightsOption};
 use crate::state::AppState;
 use crate::lora::LoraCache;
 
@@ -170,7 +171,7 @@ fn squeeze<T>(array: ArrayD<T>) -> ArrayD<T> {
     array.into_shape_with_order(IxDyn(&squeezed_shape)).expect("Failed to reshape array")
 }
 
-fn req_lora_params_from_openai(params: &CommonCreateParams, lora_root: Option<String>, lora_cache: &LoraCache) -> Result<Option<LoraParams>> {
+fn req_lora_params_from_openai(params: &CommonCreateParams, lora_root: Option<String>, lora_cache: &LoraCache, load_lora_weights: bool) -> Result<Option<LoraParams>> {
     if let Some(lora_root) = lora_root {
         if let Some(lora_model) = &params.lora_model {
             let base_path: &Path = Path::new(lora_root.as_str());
@@ -178,8 +179,7 @@ fn req_lora_params_from_openai(params: &CommonCreateParams, lora_root: Option<St
             let (weights, config) = load_lora_arrays(lora_path)?;
             let weights = squeeze(weights);
             let config = squeeze(config);
-            let auto_load_lora_cache = params.auto_load_lora_cache.unwrap_or(true);
-            if auto_load_lora_cache {
+            if load_lora_weights {
                 Ok(Some(LoraParams {
                     lora_id: lora_cache.resolve_id(lora_model),
                     weights: Some(weights),
@@ -263,6 +263,80 @@ fn llg_grammar(params: &CommonCreateParams) -> Result<Option<TopLevelGrammar>> {
     Ok(Some(grm))
 }
 
+fn is_lora_cache_miss_error(err: &AppError) -> bool {
+    let target_substring = "Please send LoRA weights with request";
+    err.to_string().contains(target_substring)
+}
+
+fn build_request_init(
+    tokens: Vec<u32>,
+    req_params: RequestParams,
+    client_req_id: ClientReqId,
+    is_run: bool,
+    params: &CommonCreateParams,
+    app_state: &AppState,
+    load_lora_weights: bool,
+) -> Result<RequestInit, AppError> {
+    let lora_params = req_lora_params_from_openai(
+        params,
+        app_state.lora_root.clone(),
+        &app_state.lora_cache,
+        load_lora_weights,
+    )?;
+
+    let request_init = RequestInit {
+        tokens,
+        params: req_params,
+        client_req_id,
+        is_run,
+        lora_params,
+    };
+    Ok(request_init)
+}
+
+fn build_req_info(
+    req_id: ReqId,
+    n_forks: u32,
+    client_req_id: ClientReqId,
+    cmpl_id: String,
+    prompt: &str,
+    prompt_tokens: usize,
+    params: &CommonCreateParams,
+    tok_env: &TokEnv,
+    is_chat: bool,
+    is_run: bool,
+    recv: UnboundedReceiver<StepResults>,
+) -> Result<ReqInfo, AppError> {
+    let usage = Usage {
+        prompt_tokens,
+        completion_tokens: 0,
+        total_tokens: prompt_tokens,
+    };
+
+    let info = ReqInfo {
+        req_id,
+        client_req_id,
+        prompt: prompt.to_string(),
+        return_expanded_prompt: params.return_expanded_prompt.unwrap_or(false),
+        is_chat,
+        is_run,
+        cmpl_id,
+        model_name: params.model.clone(),
+        created: SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs(),
+        recv,
+        tok_env: tok_env.clone(),
+        forks: vec![ForkInfo::default(); n_forks as usize],
+        stop_words: params
+            .stop
+            .as_ref()
+            .map(|stops| stops.iter().map(|s| s.as_bytes().to_vec()).collect())
+            .unwrap_or_default(),
+        usage,
+    };
+
+    Ok(info)
+}
+
 async fn mk_req_info(
     app_state: &AppState,
     prompt: String,
@@ -289,7 +363,6 @@ async fn mk_req_info(
     let cmpl_id = format!("{}-{}", if is_run { "run" } else { "cmpl" }, Uuid::new_v4());
 
     let llg = if let Some(grm) = llg_grammar(params)? {
-        // println!("grammar: {}", serde_json::to_string(&grm).unwrap());
         let parser = app_state
             .parser_factory
             .create_parser_ext(grm, params.llg_log_level.to_log_level())?;
@@ -300,27 +373,11 @@ async fn mk_req_info(
             llg.log_json_progress = true;
         }
 
-        // temperature handled by logits processing - this has to be 1.0
-        // to avoid double-application of temperature
+        // temperature handled by logits processing
         llg.temperature = req_params.temperature;
         req_params.temperature = 1.0;
 
-        // Test argmax
-        // llg.temperature = 1.0;
-        // req_params.temperature = 0.0;
-        // req_params.top_k = 1;
-
         req_params.use_logits_post_processor = true;
-
-        // If we do that, we need to make sure we return the tokens forced
-        // by the grammar to the user. Currently we don't have infra for that,
-        // so instead we just start the parser without the prompt.
-        //
-        // if is_chat {
-        //     tokens.extend_from_slice(&llg.process_prompt(vec![]));
-        // } else {
-        //     tokens = llg.process_prompt(tokens);
-        // }
         llg.start_without_prompt();
 
         let mut r = vec![Box::new(llg)];
@@ -337,62 +394,128 @@ async fn mk_req_info(
     };
 
     if let Some(bos) = app_state.tok_bos {
-        if tokens.len() == 0 || tokens[0] != bos {
+        if tokens.is_empty() || tokens[0] != bos {
             tokens.insert(0, bos);
         }
-    } else if tokens.len() == 0 {
+    } else if tokens.is_empty() {
         // insert a space if all else fails
         tokens = app_state.tokenize_with_bos(" ");
     }
 
     let n_forks = req_params.num_return_sequences;
 
-    let req_init = RequestInit {
-        tokens,
-        params: req_params,
-        client_req_id,
-        is_run,
-        lora_params: if let Some(lora_params) = req_lora_params_from_openai(params, app_state.lora_root.clone(), &app_state.lora_cache)? {
-            // Setup the correct Lora parameters here
-            Some(lora_params)
-        } else {
-            None
-        }
+    // For our first attempt, only load LoRA weights if load_lora_weights is set to "always"
+    let load_lora_weights = match params.load_lora_weights {
+        LoadLoraWeightsOption::Auto => false,
+        LoadLoraWeightsOption::Always => true,
+        LoadLoraWeightsOption::Never => false,
     };
+    let req_init = build_request_init(
+        tokens.clone(), req_params.clone(), client_req_id, is_run, &params, app_state, load_lora_weights,
+    )?;
     let prompt_tokens = req_init.tokens.len();
 
-    let (req_id, recv) = AsyncExecutor::lock().add_request(req_init, llg)?;
+    let (req_id, recv) = AsyncExecutor::lock().add_request(req_init, llg.clone())?;
 
-    let info = ReqInfo {
+    let info = build_req_info(
         req_id,
+        n_forks,
         client_req_id,
-        prompt,
-        return_expanded_prompt: params.return_expanded_prompt.unwrap_or(false),
+        cmpl_id.clone(),
+        &prompt,
+        prompt_tokens,
+        params,
+        &app_state.tok_env,
         is_chat,
         is_run,
-        cmpl_id,
-        model_name: params.model.clone(),
-        created: SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs(),
-        recv,
-        tok_env: app_state.tok_env.clone(),
-        forks: vec![ForkInfo::default(); n_forks as usize],
-        stop_words: params
-            .stop
-            .as_ref()
-            .map(|stops| stops.iter().map(|s| s.as_bytes().to_vec()).collect())
-            .unwrap_or_default(),
-        usage: Usage {
-            prompt_tokens,
-            completion_tokens: 0,
-            total_tokens: prompt_tokens,
-        },
+        recv
+    )?;
+
+    let response = if params.stream {
+        match completions_stream(info).await {
+            Ok(r) => r.into_response(),
+            Err(err) => {
+                if is_lora_cache_miss_error(&err) {
+                    log::warn!("LoRA cache miss: {:?}", err);
+
+                    // If necessary, retry with LoRA weights set
+                    if params.load_lora_weights == LoadLoraWeightsOption::Auto {
+                        log::info!("Retrying with LoRA weights set");
+                        let req_init = build_request_init(
+                            tokens.clone(), req_params.clone(), client_req_id, is_run, &params, app_state, true,
+                        )?;
+                        let prompt_tokens = req_init.tokens.len();
+                    
+                        let (req_id, recv) = AsyncExecutor::lock().add_request(req_init, llg.clone())?;
+                    
+                        let info = build_req_info(
+                            req_id,
+                            n_forks,
+                            client_req_id,
+                            cmpl_id.clone(),
+                            &prompt,
+                            prompt_tokens,
+                            params,
+                            &app_state.tok_env,
+                            is_chat,
+                            is_run,
+                            recv
+                        )?;
+
+                        completions_stream(info).await.into_response()
+                    } else {
+                        // TODO: Remap this error to something more readable
+                        err.into_response()
+                    }
+                } else {
+                    err.into_response()
+                }
+            },
+        }
+    } else {
+        match completions(info).await {
+            Ok(r) => r.into_response(),
+            Err(err) => {
+                if is_lora_cache_miss_error(&err) {
+                    log::warn!("LoRA cache miss: {:?}", err);
+
+                    // If necessary, retry with LoRA weights set
+                    if params.load_lora_weights == LoadLoraWeightsOption::Auto {
+                        log::info!("Retrying with LoRA weights set");
+                        let req_init = build_request_init(
+                            tokens.clone(), req_params.clone(), client_req_id, is_run, &params, app_state, true,
+                        )?;
+                        let prompt_tokens = req_init.tokens.len();
+                    
+                        let (req_id, recv) = AsyncExecutor::lock().add_request(req_init, llg.clone())?;
+                    
+                        let info = build_req_info(
+                            req_id,
+                            n_forks,
+                            client_req_id,
+                            cmpl_id.clone(),
+                            &prompt,
+                            prompt_tokens,
+                            params,
+                            &app_state.tok_env,
+                            is_chat,
+                            is_run,
+                            recv
+                        )?;
+
+                        completions(info).await.into_response()
+                    } else {
+                        // TODO: Remap this error to something more readable
+                        err.into_response()
+                    }
+                } else {
+                    err.into_response()
+                }
+            },
+        }
     };
 
-    if params.stream {
-        Ok(completions_stream(info).await.into_response())
-    } else {
-        Ok(completions(info).await.into_response())
-    }
+    Ok(response)
 }
 
 pub async fn route_completions(

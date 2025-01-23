@@ -4,9 +4,17 @@ use axum::{
     Json,
 };
 use serde_json::json;
+use std::fmt;
 
 #[derive(Debug)]
 pub struct AppError(anyhow::Error);
+
+impl fmt::Display for AppError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Delegate to the `Display` implementation of `anyhow::Error`
+        write!(f, "{}", self.0)
+    }
+}
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {

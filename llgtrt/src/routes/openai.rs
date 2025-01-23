@@ -62,6 +62,23 @@ pub enum ToolChoiceOption {
     Required,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum LoadLoraWeightsOption {
+    /// Automatically load the LoRA cache for new LoRA weights or cache misses.
+    Auto,
+    /// Never load the LoRA cache; propagate cache miss errors to the caller.
+    Never,
+    /// Always load LoRA weights regardless of the state of the cache.
+    Always,
+}
+
+impl Default for LoadLoraWeightsOption {
+    fn default() -> Self {
+        LoadLoraWeightsOption::Auto
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Tool {
@@ -177,16 +194,12 @@ pub struct CommonCreateParams {
     #[serde(skip)]
     pub priority: Option<f32>,
 
-    /// The uint64 unique ID of the LoRA weights to apply.
-    //#[serde(skip_serializing_if = "Option::is_none")]
-    //pub lora_id: Option<u64>,
-
     /// LoRA model name
     #[serde(skip_serializing_if = "Option::is_none")]
     pub lora_model: Option<String>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub auto_load_lora_cache: Option<bool>,
+    #[serde(default)]
+    pub load_lora_weights: LoadLoraWeightsOption,
 }
 
 #[derive(Serialize, Debug)]
