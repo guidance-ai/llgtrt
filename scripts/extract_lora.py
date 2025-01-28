@@ -13,6 +13,7 @@ import safetensors
 
 from tensorrt_llm.lora_manager import LoraManager
 from tensorrt_llm.models.convert_utils import get_model_path, load_state_dict
+from tensorrt_llm._utils import str_dtype_to_torch
 
 log_format = "%(asctime)s %(name)s [%(levelname)s] %(message)s"
 logging.basicConfig(format=log_format)
@@ -84,7 +85,7 @@ hf_modules_to_module_id = {
 }
 
 
-def convert_hf_model(model_dir, out_file):
+def convert_hf_model(model_dir, out_file, dtype=None):
     with open(f"{model_dir}/adapter_config.json", "r") as f:
         config = json.load(f)
 
@@ -134,10 +135,14 @@ def convert_hf_model(model_dir, out_file):
     for i in range(len(converted_weights)):
         converted_weights[i] = torch.nn.functional.pad(
             converted_weights[i],
-            (0, max_row_size - converted_weights[i].shape[0]))
+            (0, max_row_size - converted_weights[i].shape[0])).unsqueeze(0)
     converted_weights = torch.concatenate(
             converted_weights,
-            dim=0).unsqueeze(0).cpu()
+            dim=0)
+    if (dtype is not None):
+        converted_weights = converted_weights.to(dtype=str_dtype_to_torch(dtype))
+    converted_weights = converted_weights.cpu()
+    
     converted_config = torch.tensor(converted_config,
                                     dtype=torch.int32,
                                     device='cpu')
@@ -151,7 +156,7 @@ def convert_hf_model(model_dir, out_file):
 
 def main(args):
     start_time = datetime.datetime.now()
-    convert_hf_model(args.in_file, args.out_file)
+    convert_hf_model(args.in_file, args.out_file, args.dtype)
 
     LOGGER.info("Spent %s (h:m:s) to convert the prompt model",
                 datetime.datetime.now() - start_time)
@@ -170,6 +175,9 @@ if __name__ == "__main__":
                         type=Path,
                         help='path to input lora checkpoint file',
                         required=True)
+    parser.add_argument('--dtype',
+                        '-t',
+                        help='datatype to convert extracted LoRA weights to')
     parser.add_argument("--verbose",
                         action="store_true",
                         help="Provide verbose messages")
