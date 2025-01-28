@@ -195,7 +195,7 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
         state.tokenize_with_bos("The ultimate answer to life, the universe and everything is");
     log::debug!("Warmup tokens: {:?}", warmup_tokens);
     let (_, mut rx) = AsyncExecutor::lock().add_request(
-        RequestInit {
+        &RequestInit {
             tokens: warmup_tokens.clone(),
             params: RequestParams {
                 max_new_tokens: 10,

@@ -10,6 +10,7 @@ use std::{
     time::Duration,
 };
 use ndarray::ArrayD;
+use safetensors::Dtype;
 
 pub type TokenId = u32;
 
@@ -96,11 +97,28 @@ impl ClientReqId {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct Tensor {
+    pub size: Vec<i64>,
+    pub dtype: Dtype,
+    pub data: Vec<u8>,
+}
+
+impl Default for Tensor {
+    fn default() -> Self {
+        Tensor {
+            size: vec![],
+            dtype: Dtype::F32,
+            data: vec![],
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct LoraParams {
     pub lora_id: u64,
-    pub weights: Option<ArrayD<bf16>>,
-    pub config: Option<ArrayD<i32>>
+    pub weights: Option<Tensor>,
+    pub config: Option<Tensor>,
 }
 
 #[derive(Debug, Clone)]
@@ -243,6 +261,20 @@ fn _tlc_get_data_type<T: 'static>() -> i32 {
     }
 }
 
+fn _tlc_convert_dtype(dtype: Dtype) -> i32 {
+    match dtype {
+        Dtype::BOOL => TLC_BOOL,
+        Dtype::U8 => TLC_U8,
+        Dtype::I8 => TLC_I8,
+        Dtype::I32 => TLC_I32,
+        Dtype::I64 => TLC_I64,
+        Dtype::BF16 => TLC_BF16,
+        Dtype::F16 => TLC_F16,
+        Dtype::F32 => TLC_F32,
+        _ => TLC_UNKNOWN,
+    }
+}
+
 fn _tlc_extract_arrayd<T: 'static>(array: ArrayD<T>) -> (ffi::TlcTensor, Vec<i64>, Vec<T>) 
     where T: std::fmt::Debug
 {
@@ -270,6 +302,24 @@ fn _tlc_extract_arrayd<T: 'static>(array: ArrayD<T>) -> (ffi::TlcTensor, Vec<i64
     )
 }
 
+fn _tlc_extract_tensor(tensor: &Tensor) -> ffi::TlcTensor 
+{
+    let ffi_shape = ffi::TlcShape {
+        dims_ptr: tensor.size.as_ptr(),
+        num_dims: tensor.size.len(),
+    };
+
+    // Get the values in pure vector form
+    let data_ptr = tensor.data.as_ptr();
+    let void_data_ptr = data_ptr as *const c_void;
+
+    ffi::TlcTensor {
+        shape: ffi_shape,
+        data_ptr: void_data_ptr,
+        data_type: _tlc_convert_dtype(tensor.dtype),
+    }
+}
+
 impl Executor {
     pub fn new(init: ExecutorInit) -> Result<(Executor, Responder)> {
         let cstr = CString::new(init.engine_path).unwrap();
@@ -295,7 +345,7 @@ impl Executor {
         }
     }
 
-    pub fn enqueue_request(&mut self, init: RequestInit) -> Result<ReqId> {
+    pub fn enqueue_request(&mut self, init: &RequestInit) -> Result<ReqId> {
         ensure!(self.can_enqueue_request(), "Cannot enqueue request");
         ensure!(
             init.tokens.len() > 0,
@@ -318,19 +368,19 @@ impl Executor {
             lora_params: ffi::TlcLoraParams::default(),
         };
 
-        if let Some(lora_params) = init.lora_params {
-            let mut lc = ffi::TlcLoraParams {
+        if let Some(lora_params) = &init.lora_params {
+            let mut lp = ffi::TlcLoraParams {
                 lora_id: lora_params.lora_id,
                 weights: ffi::TlcTensor::default(),
                 config: ffi::TlcTensor::default(),
             };
-            if let Some(weights) = lora_params.weights {
-                (lc.weights, _weights_shape, _weights_vec) = _tlc_extract_arrayd(weights);
+            if let Some(weights) = &lora_params.weights {
+                lp.weights = _tlc_extract_tensor(&weights);
             }
-            if let Some(config) = lora_params.config {
-                (lc.config, _config_shape, _config_vec) = _tlc_extract_arrayd(config);
+            if let Some(config) = &lora_params.config {
+                lp.config = _tlc_extract_tensor(&config);
             }
-            arg.lora_params = lc;
+            arg.lora_params = lp;
         }
 
         let mut req_id = 0;

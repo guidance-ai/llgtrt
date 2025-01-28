@@ -9,6 +9,7 @@ libc = "0.2.158"
 serde = { version = "1.0.210", features = ["derive"] }
 ndarray = "0.16.1"
 half = "2.4.1"
+safetensors = "0.5.2"
 
 [build-dependencies]
 bindgen = "*"

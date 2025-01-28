@@ -1502,12 +1502,14 @@ dependencies = [
  "json5",
  "llguidance",
  "log",
+ "memmap2",
  "minijinja",
  "minijinja-contrib",
  "ndarray",
  "ndarray-npy",
  "rand",
  "rayon",
+ "safetensors",
  "serde",
  "serde_json",
  "tokio",
@@ -1598,6 +1600,15 @@ name = "memchr"
 version = "2.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "78ca9ab1a0babb1e7d5695e3530886289c18cf2f87ec19a575a0abdce112e3a3"
+
+[[package]]
+name = "memmap2"
+version = "0.9.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fd3f7eed9d3848f8b98834af67102b720745c4ec028fcd0aa0239277e7de374f"
+dependencies = [
+ "libc",
+]
 
 [[package]]
 name = "memo-map"
@@ -2390,6 +2401,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f3cb5ba0dc43242ce17de99c180e96db90b235b8a9fdc9543c96d2209116bd9f"
 
 [[package]]
+name = "safetensors"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0436dbfa2778e4ec1a00801b0ae24a1dd619499247d48b0589b679103379d0d4"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "schannel"
 version = "0.1.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2898,6 +2919,7 @@ dependencies = [
  "half",
  "libc",
  "ndarray",
+ "safetensors",
  "serde",
 ]
 

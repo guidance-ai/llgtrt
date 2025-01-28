@@ -1,5 +1,5 @@
 //! https://platform.openai.com/docs/api-reference/completions/create
-use anyhow::{anyhow, bail, ensure, Result, Context};
+use anyhow::{anyhow, bail, ensure, Error, Result};
 use async_stream::try_stream;
 use axum::extract::State;
 use axum::http::HeaderMap;
@@ -16,10 +16,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use std::path::Path;
 use toktrie::TokEnv;
 use tokio::sync::mpsc::UnboundedReceiver;
-use trtllm_rs::{ClientReqId, ReqId, RequestInit, RequestParams, LoraParams};
+use trtllm_rs::{ClientReqId, ReqId, RequestInit, RequestParams, LoraParams, Tensor};
 use uuid::Uuid;
-use ndarray::{ArrayD, IxDyn};
-use half::bf16;
 
 use crate::async_exec::{map_finish_reason, AsyncExecutor, StepResults};
 use crate::chat::ChatParams;
@@ -128,47 +126,40 @@ fn req_params_from_openai(params: &CommonCreateParams) -> Result<RequestParams> 
     Ok(r)
 }
 
-// Helper to convert an ArrayD between types
-fn convert_f32_to_bf16(input: ArrayD<f32>) -> Result<ArrayD<bf16>, ndarray::ShapeError> 
-{
-    let shape = input.shape().to_vec();
-    let dest_data: Vec<bf16> = input.iter().map(|&x| bf16::from_f32(x)).collect();
-    ArrayD::from_shape_vec(shape, dest_data)
-}
+fn load_lora_tensors<P: AsRef<Path>>(dir_path: P) -> Result<(Tensor, Tensor), Error> {
+    // Construct paths for the safetensors file
+    let safetensors_path = dir_path.as_ref().join("trt.safetensors");
 
-fn load_lora_arrays<P: AsRef<Path>>(dir_path: P) -> Result<(ArrayD<bf16>, ArrayD<i32>)> {
-    // Construct paths for the files
-    let config_path = dir_path.as_ref().join("model.lora_config.npy");
-    let weights_path = dir_path.as_ref().join("model.lora_weights.npy");
+    let fp = std::fs::File::open(safetensors_path.clone()).map_err(|err| {
+        let context = format!(
+            "Failed to open file: {:?}. Original error: {}",
+            safetensors_path, err
+        );
+        log::error!("{}", context); // Log the error with context
+        std::io::Error::new(std::io::ErrorKind::Other, context) // Return a new error with the context
+    })?;
+    let content = unsafe { memmap2::MmapOptions::new().map(&fp)? };
+    let safetensors = safetensors::SafeTensors::deserialize(&content)?;
 
     // Read the config array
-    let config_array: ArrayD<i32> = ndarray_npy::read_npy(&config_path)
-        .with_context(|| format!("Failed to read config file at {:?}", config_path))?;
+    let config_view = safetensors.tensor("config")?;
+    let config_size: Vec<i64> = config_view.shape().iter().map(|&x| x as i64).collect();
+    let config_tensor = Tensor {
+        size: config_size,
+        dtype: config_view.dtype(),
+        data: config_view.data().to_vec(),
+    };
 
     // Read the weights array
-    let weights_array: ArrayD<f32> = ndarray_npy::read_npy(&weights_path)
-        .with_context(|| format!("Failed to read weights file at {:?}", weights_path))?;
+    let weights_view = safetensors.tensor("weights")?;
+    let weights_size: Vec<i64> = weights_view.shape().iter().map(|&x| x as i64).collect();
+    let weights_tensor = Tensor {
+        size: weights_size,
+        dtype: weights_view.dtype(),
+        data: weights_view.data().to_vec(),
+    };
 
-    // Convert the weights array from f32 to bf16
-    let bf16_weights_array: ArrayD<bf16> = convert_f32_to_bf16(weights_array)
-        .with_context(|| "Failed to convert weights array")?;
-
-    Ok((bf16_weights_array, config_array))
-}
-
-// Removes size-1 dimensions from an ArrayD.  TensorRT requires us to squeeze the LoRA weights and config
-// before passing them along.
-fn squeeze<T>(array: ArrayD<T>) -> ArrayD<T> {
-    let original_shape = array.shape().to_vec();
-    let squeezed_shape: Vec<usize> = original_shape.into_iter().filter(|&dim| dim != 1).collect();
-    
-    // If there are no dimensions left, we return the array as-is
-    if squeezed_shape.is_empty() {
-        return array;
-    }
-    
-    // Reshape the array to the new squeezed shape
-    array.into_shape_with_order(IxDyn(&squeezed_shape)).expect("Failed to reshape array")
+    Ok((weights_tensor, config_tensor))
 }
 
 fn req_lora_params_from_openai(params: &CommonCreateParams, lora_root: Option<String>, lora_cache: &LoraCache, load_lora_weights: bool) -> Result<Option<LoraParams>> {
@@ -176,9 +167,7 @@ fn req_lora_params_from_openai(params: &CommonCreateParams, lora_root: Option<St
         if let Some(lora_model) = &params.lora_model {
             let base_path: &Path = Path::new(lora_root.as_str());
             let lora_path = base_path.join(lora_model);
-            let (weights, config) = load_lora_arrays(lora_path)?;
-            let weights = squeeze(weights);
-            let config = squeeze(config);
+            let (weights, config) = load_lora_tensors(lora_path)?;
             if load_lora_weights {
                 Ok(Some(LoraParams {
                     lora_id: lora_cache.resolve_id(lora_model),
@@ -415,7 +404,7 @@ async fn mk_req_info(
     )?;
     let prompt_tokens = req_init.tokens.len();
 
-    let (req_id, recv) = AsyncExecutor::lock().add_request(req_init, llg.clone())?;
+    let (req_id, recv) = AsyncExecutor::lock().add_request(&req_init, llg.clone())?;
 
     let info = build_req_info(
         req_id,
@@ -446,7 +435,7 @@ async fn mk_req_info(
                         )?;
                         let prompt_tokens = req_init.tokens.len();
                     
-                        let (req_id, recv) = AsyncExecutor::lock().add_request(req_init, llg.clone())?;
+                        let (req_id, recv) = AsyncExecutor::lock().add_request(&req_init, llg.clone())?;
                     
                         let info = build_req_info(
                             req_id,
@@ -487,7 +476,7 @@ async fn mk_req_info(
                         )?;
                         let prompt_tokens = req_init.tokens.len();
                     
-                        let (req_id, recv) = AsyncExecutor::lock().add_request(req_init, llg.clone())?;
+                        let (req_id, recv) = AsyncExecutor::lock().add_request(&req_init, llg.clone())?;
                     
                         let info = build_req_info(
                             req_id,
