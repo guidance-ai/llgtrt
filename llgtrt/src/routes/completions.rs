@@ -126,17 +126,31 @@ fn req_params_from_openai(params: &CommonCreateParams) -> Result<RequestParams> 
     Ok(r)
 }
 
-fn load_lora_tensors<P: AsRef<Path>>(dir_path: P) -> Result<(Tensor, Tensor), Error> {
+fn load_lora_tensors<P: AsRef<Path>>(base_path: P, lora_model: &str) -> Result<(Tensor, Tensor), Error> {
     // Construct paths for the safetensors file
-    let safetensors_path = dir_path.as_ref().join("trt.safetensors");
+    let safetensors_path = base_path.as_ref().join(lora_model).with_extension("safetensors");
+    log::info!("Loading LoRA weights from {}", safetensors_path.display());
+
+    // Ensure the resulting path is within the lora root hierarchy
+    let canonicalized = std::fs::canonicalize(safetensors_path.clone()).map_err(|err| {
+        let context = format!(
+            "Failed to find LoRA weights file: {}. Error: {}",
+            safetensors_path.display(), err
+        );
+        log::error!("{}", context);
+        anyhow!(context)
+    })?;
+    if !canonicalized.starts_with(base_path.as_ref()) {
+        return Err(anyhow!("LoRA weights path {} is outside the LoRA base directory {}", safetensors_path.display(), base_path.as_ref().display()));
+    }
 
     let fp = std::fs::File::open(safetensors_path.clone()).map_err(|err| {
         let context = format!(
-            "Failed to open file: {:?}. Original error: {}",
-            safetensors_path, err
+            "Failed to open LoRA weights file: {}. Error: {}",
+            safetensors_path.display(), err
         );
-        log::error!("{}", context); // Log the error with context
-        std::io::Error::new(std::io::ErrorKind::Other, context) // Return a new error with the context
+        log::error!("{}", context);
+        anyhow!(context)
     })?;
     let content = unsafe { memmap2::MmapOptions::new().map(&fp)? };
     let safetensors = safetensors::SafeTensors::deserialize(&content)?;
@@ -166,8 +180,7 @@ fn req_lora_params_from_openai(params: &CommonCreateParams, lora_root: Option<St
     if let Some(lora_root) = lora_root {
         if let Some(lora_model) = &params.lora_model {
             let base_path: &Path = Path::new(lora_root.as_str());
-            let lora_path = base_path.join(lora_model);
-            let (weights, config) = load_lora_tensors(lora_path)?;
+            let (weights, config) = load_lora_tensors(base_path, lora_model)?;
             if load_lora_weights {
                 Ok(Some(LoraParams {
                     lora_id: lora_cache.resolve_id(lora_model),
@@ -185,7 +198,11 @@ fn req_lora_params_from_openai(params: &CommonCreateParams, lora_root: Option<St
             Ok(None)
         }
     } else {
-        Ok(None)
+        if let Some(_lora_model) = &params.lora_model {
+            Err(anyhow!("lora_model specified but lora_root not set"))
+        } else {
+            Ok(None)
+        }
     }
 }
 
@@ -362,7 +379,8 @@ async fn mk_req_info(
             llg.log_json_progress = true;
         }
 
-        // temperature handled by logits processing
+        // temperature handled by logits processing - this has to be 1.0
+        // to avoid double-application of temperature
         llg.temperature = req_params.temperature;
         req_params.temperature = 1.0;
 
@@ -453,8 +471,9 @@ async fn mk_req_info(
 
                         completions_stream(info).await.into_response()
                     } else {
-                        // TODO: Remap this error to something more readable
-                        err.into_response()
+                        AppError::from(anyhow!(
+                            "LoRA model {:?} was not in cache and load_lora_weights is set to never: {:?}", params.lora_model, err
+                        )).into_response()
                     }
                 } else {
                     err.into_response()
@@ -494,8 +513,9 @@ async fn mk_req_info(
 
                         completions(info).await.into_response()
                     } else {
-                        // TODO: Remap this error to something more readable
-                        err.into_response()
+                        AppError::from(anyhow!(
+                            "LoRA model {:?} was not in cache and load_lora_weights is set to never: {:?}", params.lora_model, err
+                        )).into_response()
                     }
                 } else {
                     err.into_response()

@@ -47,19 +47,28 @@ cp /models/Meta-Llama-3.1-8B-Instruct/tokenizer_config.json /models/model-engine
 exit
 ```
 
-### Converting LoRA weights
+### Extract LoRA weights
 
-TensorRT cannot read LoRA weights directly from Huggingface safetensors format. So we convert weights to a simplified "tensor" format that TensorRT can read.  Note that these weights are simply converted -- unlike the base model they are not compiled into an execution graph.  TensorRT provides the _hf_lora_convert.py_ utility to perform this conversion.  This step should be done within the llgtrt container.
+TensorRT cannot read LoRA weights directly from Huggingface safetensors format. So we provide a Python-based utility to extract weights into a simplified "tensor" format that TensorRT can read.
+Note that these weights are simply converted -- unlike the base model they are not compiled into an execution graph.
+The scripts/extrct_lora.py utility performs the extraction.  It should be run within the llgtrt container.
 
 ```bash
-# Create a directory for LoRA weights
-mkdir -p /models/lora/my_finetuning
+# Ensure that a base LoRA directory exists
+mkdir -p /models/lora
 
-# Convert weights.  Float32 is used only as an intemediate storage type here; the weights will be converted to bfloat16 when loaded for inference.
-python3 /code/TensorRT-LLM/examples/hf_lora_convert.py -i /models/My-Finetuned-Meta-Llama-3.1-8B-Instruct -o /models/lora/my_finetuning --storage-type float32
+# Run the extraction
+python3 /code/scripts/extract_lora.py -i /models/My-Finetuned-Meta-Llama-3.1-8B-Instruct -o /models/lora/my_finetuning.safetensors
 
 exit
 ```
+The datatype of the LoRA weights must be the same as the datatype of the base model.  In the event that these differ, you can optionally
+add a --dtype parameter (short form -t) to force a specific output type.  For example:
+
+```bash
+python3 /code/scripts/extract_lora.py -i /models/My-Finetuned-Meta-Llama-3.1-8B-Instruct -o /models/lora/my_finetuning.safetensors -t bfloat16
+```
+
 
 ### Launching llgtrt with LoRA
 
@@ -72,7 +81,7 @@ PORT=3001 ./docker/run.sh /models/Meta-Llama-3.1-8B-Instruct models/lora
 
 ## Inference
 
-To load a set of LoRA weights into the TensorRT cache, specify _lora_id_ and _lora_dir_ in your inference request:
+To load a set of LoRA weights into the TensorRT cache, specify _lora_model_ in your inference request:
 
 ``` json
 {
@@ -83,12 +92,17 @@ To load a set of LoRA weights into the TensorRT cache, specify _lora_id_ and _lo
             "content": "What is the meaning of life?"
         }
     ],
-    "lora_id": 17,
-    "lora_dir": "my_finetuning"
+    "lora_model": "my_finetuning"
 }
 ```
 
-Once a set of LoRA weights is loaded, subsequent requests may done using _lora_id_ alone:
+TensorRT maintains a cache of LoRA weights within GPU memory. The first time you use a given lora_model it will be loaded into the cache.
+Subsequent requests using the same lora_model will use the cache.  In the event the cache fills up, TensorRT will evict a set of LoRA
+weights from the cache (its choice) and the next request for that lora_model will reload its weights into the cache.
+
+For finer control over the cache we provide the *load_lora_weights* parameter.  Setting this to "always" will always load weights
+even if they're already cached.  Likewise, setting this to "never" will never load weights, producing an error in the event the
+weights are not cached.  For example:
 
 ``` json
 {
@@ -99,23 +113,11 @@ Once a set of LoRA weights is loaded, subsequent requests may done using _lora_i
             "content": "What is the meaning of life?"
         }
     ],
-    "lora_id": 17
+    "lora_model": "my_finetuning",
+    "load_lora_weights": "never"
 }
 ```
 
-Finally, you may continue to run base model (non-finetuned) inference requests by omitting both LoRA parameters:
-
-``` json
-{
-    "model": "llama",
-    "messages": [
-        {
-            "role": "user",
-            "content": "What is the meaning of life?"
-        }
-    ],
-}
-```
 
 There is no need to restart llgtrt or the TensorRT engine to load a new set of LoRA weights into the cache; weights can be loaded on-the-fly as needed.
 
