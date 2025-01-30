@@ -2,6 +2,8 @@
 members = [
     "trtllm_rs",
     "llgtrt",
+    "llguidance/sample_parser",
+    "llguidance/python_ext",
     "llguidance/json_stats",
     "llguidance/parser",
     "llguidance/toktrie",
