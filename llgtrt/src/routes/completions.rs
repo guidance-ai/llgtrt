@@ -11,21 +11,21 @@ use llguidance::api::{GrammarWithLexer, TopLevelGrammar};
 use llguidance::{lark_to_llguidance, Constraint, JsonCompileOptions};
 use serde_json::{json, Value};
 use std::fmt::Display;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-use std::path::Path;
-use toktrie::TokEnv;
 use tokio::sync::mpsc::UnboundedReceiver;
-use trtllm_rs::{ClientReqId, ReqId, RequestInit, RequestParams, LoraParams, Tensor};
+use toktrie::TokEnv;
+use trtllm_rs::{ClientReqId, LoraParams, ReqId, RequestInit, RequestParams, Tensor};
 use uuid::Uuid;
 
 use crate::async_exec::{map_finish_reason, AsyncExecutor, StepResults};
 use crate::chat::ChatParams;
 use crate::error::AppError;
-use crate::routes::api_ext::{tools_to_schema, LlgLogLevel};
-use crate::routes::openai::{JsonSchemaOptions, ResponseFormat, ToolChoice, LoadLoraWeightsOption};
-use crate::state::AppState;
 use crate::lora::LoraCache;
+use crate::routes::api_ext::{tools_to_schema, LlgLogLevel};
+use crate::routes::openai::{JsonSchemaOptions, LoadLoraWeightsOption, ResponseFormat, ToolChoice};
+use crate::state::AppState;
 
 use super::api_ext::{
     InitialRunResponse, RunForkResponse, RunRequest, RunResponse, RunUsageResponse,
@@ -126,28 +126,40 @@ fn req_params_from_openai(params: &CommonCreateParams) -> Result<RequestParams> 
     Ok(r)
 }
 
-fn load_lora_tensors<P: AsRef<Path>>(base_path: P, lora_model: &str) -> Result<(Tensor, Tensor), Error> {
+fn load_lora_tensors<P: AsRef<Path>>(
+    base_path: P,
+    lora_model: &str,
+) -> Result<(Tensor, Tensor), Error> {
     // Construct paths for the safetensors file
-    let safetensors_path = base_path.as_ref().join(lora_model).with_extension("safetensors");
+    let safetensors_path = base_path
+        .as_ref()
+        .join(lora_model)
+        .with_extension("safetensors");
     log::info!("Loading LoRA weights from {}", safetensors_path.display());
 
     // Ensure the resulting path is within the lora root hierarchy
     let canonicalized = std::fs::canonicalize(safetensors_path.clone()).map_err(|err| {
         let context = format!(
             "Failed to find LoRA weights file: {}. Error: {}",
-            safetensors_path.display(), err
+            safetensors_path.display(),
+            err
         );
         log::error!("{}", context);
         anyhow!(context)
     })?;
     if !canonicalized.starts_with(base_path.as_ref()) {
-        return Err(anyhow!("LoRA weights path {} is outside the LoRA base directory {}", safetensors_path.display(), base_path.as_ref().display()));
+        return Err(anyhow!(
+            "LoRA weights path {} is outside the LoRA base directory {}",
+            safetensors_path.display(),
+            base_path.as_ref().display()
+        ));
     }
 
     let fp = std::fs::File::open(safetensors_path.clone()).map_err(|err| {
         let context = format!(
             "Failed to open LoRA weights file: {}. Error: {}",
-            safetensors_path.display(), err
+            safetensors_path.display(),
+            err
         );
         log::error!("{}", context);
         anyhow!(context)
@@ -176,7 +188,12 @@ fn load_lora_tensors<P: AsRef<Path>>(base_path: P, lora_model: &str) -> Result<(
     Ok((weights_tensor, config_tensor))
 }
 
-fn req_lora_params_from_openai(params: &CommonCreateParams, lora_root: Option<String>, lora_cache: &LoraCache, load_lora_weights: bool) -> Result<Option<LoraParams>> {
+fn req_lora_params_from_openai(
+    params: &CommonCreateParams,
+    lora_root: Option<String>,
+    lora_cache: &LoraCache,
+    load_lora_weights: bool,
+) -> Result<Option<LoraParams>> {
     if let Some(lora_root) = lora_root {
         if let Some(lora_model) = &params.lora_model {
             let base_path: &Path = Path::new(lora_root.as_str());
@@ -428,7 +445,13 @@ async fn mk_req_info(
         LoadLoraWeightsOption::Never => false,
     };
     let req_init = build_request_init(
-        tokens.clone(), req_params.clone(), client_req_id, is_run, &params, app_state, load_lora_weights,
+        tokens.clone(),
+        req_params.clone(),
+        client_req_id,
+        is_run,
+        &params,
+        app_state,
+        load_lora_weights,
     )?;
     let prompt_tokens = req_init.tokens.len();
 
@@ -445,7 +468,7 @@ async fn mk_req_info(
         &app_state.tok_env,
         is_chat,
         is_run,
-        recv
+        recv,
     )?;
 
     let response = if params.stream {
@@ -459,12 +482,19 @@ async fn mk_req_info(
                     if params.load_lora_weights == LoadLoraWeightsOption::Auto {
                         log::info!("Retrying with LoRA weights set");
                         let req_init = build_request_init(
-                            tokens.clone(), req_params.clone(), client_req_id, is_run, &params, app_state, true,
+                            tokens.clone(),
+                            req_params.clone(),
+                            client_req_id,
+                            is_run,
+                            &params,
+                            app_state,
+                            true,
                         )?;
                         let prompt_tokens = req_init.tokens.len();
-                    
-                        let (req_id, recv) = AsyncExecutor::lock().add_request(&req_init, llg.clone())?;
-                    
+
+                        let (req_id, recv) =
+                            AsyncExecutor::lock().add_request(&req_init, llg.clone())?;
+
                         let info = build_req_info(
                             req_id,
                             n_forks,
@@ -476,7 +506,7 @@ async fn mk_req_info(
                             &app_state.tok_env,
                             is_chat,
                             is_run,
-                            recv
+                            recv,
                         )?;
 
                         completions_stream(info).await.into_response()
@@ -488,7 +518,7 @@ async fn mk_req_info(
                 } else {
                     err.into_response()
                 }
-            },
+            }
         }
     } else {
         match completions(info).await {
@@ -501,12 +531,19 @@ async fn mk_req_info(
                     if params.load_lora_weights == LoadLoraWeightsOption::Auto {
                         log::info!("Retrying with LoRA weights set");
                         let req_init = build_request_init(
-                            tokens.clone(), req_params.clone(), client_req_id, is_run, &params, app_state, true,
+                            tokens.clone(),
+                            req_params.clone(),
+                            client_req_id,
+                            is_run,
+                            &params,
+                            app_state,
+                            true,
                         )?;
                         let prompt_tokens = req_init.tokens.len();
-                    
-                        let (req_id, recv) = AsyncExecutor::lock().add_request(&req_init, llg.clone())?;
-                    
+
+                        let (req_id, recv) =
+                            AsyncExecutor::lock().add_request(&req_init, llg.clone())?;
+
                         let info = build_req_info(
                             req_id,
                             n_forks,
@@ -518,7 +555,7 @@ async fn mk_req_info(
                             &app_state.tok_env,
                             is_chat,
                             is_run,
-                            recv
+                            recv,
                         )?;
 
                         completions(info).await.into_response()
@@ -530,7 +567,7 @@ async fn mk_req_info(
                 } else {
                     err.into_response()
                 }
-            },
+            }
         }
     };
 

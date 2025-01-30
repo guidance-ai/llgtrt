@@ -1,14 +1,14 @@
 use crate::{ffi, TlcLogitsEntry};
 use anyhow::{ensure, Result};
+use safetensors::Dtype;
 use std::{
     ffi::{c_void, CStr, CString},
     fmt::Display,
-    ptr,
     hash::Hash,
+    ptr,
     sync::atomic::AtomicU32,
     time::Duration,
 };
-use safetensors::Dtype;
 
 pub type TokenId = u32;
 
@@ -251,8 +251,7 @@ fn tlc_convert_dtype(dtype: Dtype) -> i32 {
     }
 }
 
-fn tlc_extract_tensor(tensor: &Tensor) -> ffi::TlcTensor 
-{
+fn tlc_extract_tensor(tensor: &Tensor) -> ffi::TlcTensor {
     let ffi_shape = ffi::TlcShape {
         dims_ptr: tensor.size.as_ptr(),
         num_dims: tensor.size.len(),

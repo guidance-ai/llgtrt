@@ -15,9 +15,9 @@ use trtllm_rs::{ClientReqId, ExecutorInit, RequestInit, RequestParams};
 use crate::async_exec::AsyncExecutor;
 use crate::config::{config_info, CliConfig, LlgTrtConfig};
 use crate::jsonutil::json5_to_string;
+use crate::lora::LoraCache;
 use crate::state::AppState;
 use crate::{jsonutil, routes};
-use crate::lora::LoraCache;
 
 async fn auth_middleware(
     req: Request<Body>,

@@ -12,7 +12,10 @@ fn main() {
     // println!("cargo:rustc-link-arg=-Wl,-rpath,{}", build_dir);
 
     println!("cargo:rerun-if-changed={}/../trtllm-c/tlc.h", crate_dir);
-    println!("cargo:rerun-if-changed={}/../trtllm-c/build/libtrtllm_c.a", crate_dir);
+    println!(
+        "cargo:rerun-if-changed={}/../trtllm-c/build/libtrtllm_c.a",
+        crate_dir
+    );
 
     let bindings = bindgen::Builder::default()
         .header("../trtllm-c/tlc.h")
