@@ -1,12 +1,14 @@
 use crate::{ffi, TlcLogitsEntry};
 use anyhow::{ensure, Result};
 use std::{
-    ffi::{CStr, CString},
+    ffi::{c_void, CStr, CString},
     fmt::Display,
+    ptr,
     hash::Hash,
     sync::atomic::AtomicU32,
     time::Duration,
 };
+use safetensors::Dtype;
 
 pub type TokenId = u32;
 
@@ -94,11 +96,36 @@ impl ClientReqId {
 }
 
 #[derive(Debug, Clone)]
+pub struct Tensor {
+    pub size: Vec<i64>,
+    pub dtype: Dtype,
+    pub data: Vec<u8>,
+}
+
+impl Default for Tensor {
+    fn default() -> Self {
+        Tensor {
+            size: vec![],
+            dtype: Dtype::F32,
+            data: vec![],
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct LoraParams {
+    pub lora_id: u64,
+    pub weights: Option<Tensor>,
+    pub config: Option<Tensor>,
+}
+
+#[derive(Debug, Clone)]
 pub struct RequestInit {
     pub tokens: Vec<TokenId>,
     pub client_req_id: ClientReqId,
     pub is_run: bool,
     pub params: RequestParams,
+    pub lora_params: Option<LoraParams>,
 }
 
 pub struct Executor {
@@ -169,6 +196,79 @@ impl Default for ffi::TlcEngineParams {
     }
 }
 
+impl Default for ffi::TlcShape {
+    fn default() -> Self {
+        ffi::TlcShape {
+            dims_ptr: ptr::null(),
+            num_dims: 0,
+        }
+    }
+}
+
+impl Default for ffi::TlcTensor {
+    fn default() -> Self {
+        ffi::TlcTensor {
+            data_type: 0,
+            data_ptr: ptr::null(),
+            shape: ffi::TlcShape::default(),
+        }
+    }
+}
+
+impl Default for ffi::TlcLoraParams {
+    fn default() -> Self {
+        ffi::TlcLoraParams {
+            lora_id: 0,
+            weights: ffi::TlcTensor::default(),
+            config: ffi::TlcTensor::default(),
+        }
+    }
+}
+
+/// These constants line up with the DataType enum in TensorRT's types.h
+const TLC_BOOL: i32 = 0;
+const TLC_U8: i32 = 1;
+const TLC_I8: i32 = 2;
+const TLC_I32: i32 = 3;
+const TLC_I64: i32 = 4;
+const TLC_BF16: i32 = 5;
+//const TLC_F8: i32 = 6;  // TODO: find a way to support F8 correctly through Rust.
+const TLC_F16: i32 = 7;
+const TLC_F32: i32 = 8;
+const TLC_UNKNOWN: i32 = 9;
+
+fn tlc_convert_dtype(dtype: Dtype) -> i32 {
+    match dtype {
+        Dtype::BOOL => TLC_BOOL,
+        Dtype::U8 => TLC_U8,
+        Dtype::I8 => TLC_I8,
+        Dtype::I32 => TLC_I32,
+        Dtype::I64 => TLC_I64,
+        Dtype::BF16 => TLC_BF16,
+        Dtype::F16 => TLC_F16,
+        Dtype::F32 => TLC_F32,
+        _ => TLC_UNKNOWN,
+    }
+}
+
+fn tlc_extract_tensor(tensor: &Tensor) -> ffi::TlcTensor 
+{
+    let ffi_shape = ffi::TlcShape {
+        dims_ptr: tensor.size.as_ptr(),
+        num_dims: tensor.size.len(),
+    };
+
+    // Get the values in pure vector form
+    let data_ptr = tensor.data.as_ptr();
+    let void_data_ptr = data_ptr as *const c_void;
+
+    ffi::TlcTensor {
+        shape: ffi_shape,
+        data_ptr: void_data_ptr,
+        data_type: tlc_convert_dtype(tensor.dtype),
+    }
+}
+
 impl Executor {
     pub fn new(init: ExecutorInit) -> Result<(Executor, Responder)> {
         let cstr = CString::new(init.engine_path).unwrap();
@@ -194,18 +294,36 @@ impl Executor {
         }
     }
 
-    pub fn enqueue_request(&mut self, init: RequestInit) -> Result<ReqId> {
+    pub fn enqueue_request(&mut self, init: &RequestInit) -> Result<ReqId> {
         ensure!(self.can_enqueue_request(), "Cannot enqueue request");
         ensure!(
             init.tokens.len() > 0,
             "Request must have at least one token"
         );
-        let arg = ffi::TlcRequest {
+
+        let mut arg = ffi::TlcRequest {
             tokens: init.tokens.as_ptr() as *mut i32,
             num_tokens: init.tokens.len() as u32,
             params: init.params.clone(),
             client_req_id: init.client_req_id.0,
+            lora_params: ffi::TlcLoraParams::default(),
         };
+
+        if let Some(lora_params) = &init.lora_params {
+            let mut lp = ffi::TlcLoraParams {
+                lora_id: lora_params.lora_id,
+                weights: ffi::TlcTensor::default(),
+                config: ffi::TlcTensor::default(),
+            };
+            if let Some(weights) = &lora_params.weights {
+                lp.weights = tlc_extract_tensor(&weights);
+            }
+            if let Some(config) = &lora_params.config {
+                lp.config = tlc_extract_tensor(&config);
+            }
+            arg.lora_params = lp;
+        }
+
         let mut req_id = 0;
         let err = unsafe { ffi::tlc_enqueue_request(self.inner, &arg, &mut req_id) };
         map_err(err, ReqId(req_id), "tlc_enqueue_request")

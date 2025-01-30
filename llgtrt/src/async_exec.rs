@@ -425,7 +425,7 @@ impl AsyncExecutor {
 
     pub fn add_request(
         &mut self,
-        init: RequestInit,
+        init: &RequestInit,
         llgs: Vec<Box<Constraint>>,
     ) -> Result<(ReqId, UnboundedReceiver<StepResults>)> {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();

@@ -17,6 +17,7 @@ use crate::config::{config_info, CliConfig, LlgTrtConfig};
 use crate::jsonutil::json5_to_string;
 use crate::state::AppState;
 use crate::{jsonutil, routes};
+use crate::lora::LoraCache;
 
 async fn auth_middleware(
     req: Request<Body>,
@@ -184,6 +185,8 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
         next_client_req_id: std::sync::atomic::AtomicUsize::new(1000),
         chat_builder,
         parser_factory,
+        lora_root: cli_config.lora_root,
+        lora_cache: LoraCache::new(),
     };
 
     // warmup request
@@ -192,13 +195,14 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
         state.tokenize_with_bos("The ultimate answer to life, the universe and everything is");
     log::debug!("Warmup tokens: {:?}", warmup_tokens);
     let (_, mut rx) = AsyncExecutor::lock().add_request(
-        RequestInit {
+        &RequestInit {
             tokens: warmup_tokens.clone(),
             params: RequestParams {
                 max_new_tokens: 10,
                 ..Default::default()
             },
             client_req_id: ClientReqId::new(1),
+            lora_params: None,
             is_run: false,
         },
         vec![],

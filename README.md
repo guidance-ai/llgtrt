@@ -135,6 +135,11 @@ Drop the following `llgtrt.json5` file in engine folder:
 }
 ```
 
+## LoRA and Multi-LoRA
+
+Support for finetuned models via LoRA is provided but requires a few extra steps.
+Detailed instructions are in [LoRA.md](LoRA.md)
+
 ## Development
 
 First, build the Docker container to be used in the dev container. If you have already followed the steps above, you can skip this. Otherwise, run `./docker/build.sh`.
@@ -147,7 +152,7 @@ The basic structure of the server borrows inspiration from [npuichigo/openai_trt
 
 ## TODO
 
-- [ ] multi-LoRA?
+- [X] multi-LoRA
 - [x] test phi-3.5
 - [ ] multi-modal input
 - [ ] when streaming, and stop is set, we need to buffer the output so as not to return the stop sequence itself

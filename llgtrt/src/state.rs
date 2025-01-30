@@ -1,4 +1,5 @@
 use crate::chat::ChatBuilder;
+use crate::lora::LoraCache;
 use llguidance::ParserFactory;
 use toktrie::{TokEnv, TokenId};
 
@@ -12,6 +13,8 @@ pub struct AppState {
     pub next_client_req_id: std::sync::atomic::AtomicUsize,
     pub chat_builder: ChatBuilder,
     pub parser_factory: ParserFactory,
+    pub lora_root: Option<String>,
+    pub lora_cache: LoraCache,
 }
 
 impl AppState {

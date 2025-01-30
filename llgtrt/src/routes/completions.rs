@@ -1,5 +1,5 @@
 //! https://platform.openai.com/docs/api-reference/completions/create
-use anyhow::{anyhow, bail, ensure, Result};
+use anyhow::{anyhow, bail, ensure, Error, Result};
 use async_stream::try_stream;
 use axum::extract::State;
 use axum::http::HeaderMap;
@@ -13,16 +13,19 @@ use serde_json::{json, Value};
 use std::fmt::Display;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::path::Path;
 use toktrie::TokEnv;
-use trtllm_rs::{ClientReqId, ReqId, RequestInit, RequestParams};
+use tokio::sync::mpsc::UnboundedReceiver;
+use trtllm_rs::{ClientReqId, ReqId, RequestInit, RequestParams, LoraParams, Tensor};
 use uuid::Uuid;
 
 use crate::async_exec::{map_finish_reason, AsyncExecutor, StepResults};
 use crate::chat::ChatParams;
 use crate::error::AppError;
 use crate::routes::api_ext::{tools_to_schema, LlgLogLevel};
-use crate::routes::openai::{JsonSchemaOptions, ResponseFormat, ToolChoice};
+use crate::routes::openai::{JsonSchemaOptions, ResponseFormat, ToolChoice, LoadLoraWeightsOption};
 use crate::state::AppState;
+use crate::lora::LoraCache;
 
 use super::api_ext::{
     InitialRunResponse, RunForkResponse, RunRequest, RunResponse, RunUsageResponse,
@@ -123,6 +126,86 @@ fn req_params_from_openai(params: &CommonCreateParams) -> Result<RequestParams> 
     Ok(r)
 }
 
+fn load_lora_tensors<P: AsRef<Path>>(base_path: P, lora_model: &str) -> Result<(Tensor, Tensor), Error> {
+    // Construct paths for the safetensors file
+    let safetensors_path = base_path.as_ref().join(lora_model).with_extension("safetensors");
+    log::info!("Loading LoRA weights from {}", safetensors_path.display());
+
+    // Ensure the resulting path is within the lora root hierarchy
+    let canonicalized = std::fs::canonicalize(safetensors_path.clone()).map_err(|err| {
+        let context = format!(
+            "Failed to find LoRA weights file: {}. Error: {}",
+            safetensors_path.display(), err
+        );
+        log::error!("{}", context);
+        anyhow!(context)
+    })?;
+    if !canonicalized.starts_with(base_path.as_ref()) {
+        return Err(anyhow!("LoRA weights path {} is outside the LoRA base directory {}", safetensors_path.display(), base_path.as_ref().display()));
+    }
+
+    let fp = std::fs::File::open(safetensors_path.clone()).map_err(|err| {
+        let context = format!(
+            "Failed to open LoRA weights file: {}. Error: {}",
+            safetensors_path.display(), err
+        );
+        log::error!("{}", context);
+        anyhow!(context)
+    })?;
+    let content = unsafe { memmap2::MmapOptions::new().map(&fp)? };
+    let safetensors = safetensors::SafeTensors::deserialize(&content)?;
+
+    // Read the config array
+    let config_view = safetensors.tensor("config")?;
+    let config_size: Vec<i64> = config_view.shape().iter().map(|&x| x as i64).collect();
+    let config_tensor = Tensor {
+        size: config_size,
+        dtype: config_view.dtype(),
+        data: config_view.data().to_vec(),
+    };
+
+    // Read the weights array
+    let weights_view = safetensors.tensor("weights")?;
+    let weights_size: Vec<i64> = weights_view.shape().iter().map(|&x| x as i64).collect();
+    let weights_tensor = Tensor {
+        size: weights_size,
+        dtype: weights_view.dtype(),
+        data: weights_view.data().to_vec(),
+    };
+
+    Ok((weights_tensor, config_tensor))
+}
+
+fn req_lora_params_from_openai(params: &CommonCreateParams, lora_root: Option<String>, lora_cache: &LoraCache, load_lora_weights: bool) -> Result<Option<LoraParams>> {
+    if let Some(lora_root) = lora_root {
+        if let Some(lora_model) = &params.lora_model {
+            let base_path: &Path = Path::new(lora_root.as_str());
+            let (weights, config) = load_lora_tensors(base_path, lora_model)?;
+            if load_lora_weights {
+                Ok(Some(LoraParams {
+                    lora_id: lora_cache.resolve_id(lora_model),
+                    weights: Some(weights),
+                    config: Some(config),
+                }))
+            } else {
+                Ok(Some(LoraParams {
+                    lora_id: lora_cache.resolve_id(lora_model),
+                    weights: None,
+                    config: None,
+                }))
+            }
+        } else {
+            Ok(None)
+        }
+    } else {
+        if let Some(_lora_model) = &params.lora_model {
+            Err(anyhow!("lora_model specified but lora_root not set"))
+        } else {
+            Ok(None)
+        }
+    }
+}
+
 fn validate_compl(req: &CompletionCreateParams) -> Result<()> {
     ensure!(req.prompt.len() == 1, "prompt must be a single string");
     ensure!(req.suffix.is_none(), "suffix is not supported");
@@ -186,6 +269,80 @@ fn llg_grammar(params: &CommonCreateParams) -> Result<Option<TopLevelGrammar>> {
     Ok(Some(grm))
 }
 
+fn is_lora_cache_miss_error(err: &AppError) -> bool {
+    let target_substring = "Please send LoRA weights with request";
+    err.to_string().contains(target_substring)
+}
+
+fn build_request_init(
+    tokens: Vec<u32>,
+    req_params: RequestParams,
+    client_req_id: ClientReqId,
+    is_run: bool,
+    params: &CommonCreateParams,
+    app_state: &AppState,
+    load_lora_weights: bool,
+) -> Result<RequestInit, AppError> {
+    let lora_params = req_lora_params_from_openai(
+        params,
+        app_state.lora_root.clone(),
+        &app_state.lora_cache,
+        load_lora_weights,
+    )?;
+
+    let request_init = RequestInit {
+        tokens,
+        params: req_params,
+        client_req_id,
+        is_run,
+        lora_params,
+    };
+    Ok(request_init)
+}
+
+fn build_req_info(
+    req_id: ReqId,
+    n_forks: u32,
+    client_req_id: ClientReqId,
+    cmpl_id: String,
+    prompt: &str,
+    prompt_tokens: usize,
+    params: &CommonCreateParams,
+    tok_env: &TokEnv,
+    is_chat: bool,
+    is_run: bool,
+    recv: UnboundedReceiver<StepResults>,
+) -> Result<ReqInfo, AppError> {
+    let usage = Usage {
+        prompt_tokens,
+        completion_tokens: 0,
+        total_tokens: prompt_tokens,
+    };
+
+    let info = ReqInfo {
+        req_id,
+        client_req_id,
+        prompt: prompt.to_string(),
+        return_expanded_prompt: params.return_expanded_prompt.unwrap_or(false),
+        is_chat,
+        is_run,
+        cmpl_id,
+        model_name: params.model.clone(),
+        created: SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs(),
+        recv,
+        tok_env: tok_env.clone(),
+        forks: vec![ForkInfo::default(); n_forks as usize],
+        stop_words: params
+            .stop
+            .as_ref()
+            .map(|stops| stops.iter().map(|s| s.as_bytes().to_vec()).collect())
+            .unwrap_or_default(),
+        usage,
+    };
+
+    Ok(info)
+}
+
 async fn mk_req_info(
     app_state: &AppState,
     prompt: String,
@@ -212,7 +369,6 @@ async fn mk_req_info(
     let cmpl_id = format!("{}-{}", if is_run { "run" } else { "cmpl" }, Uuid::new_v4());
 
     let llg = if let Some(grm) = llg_grammar(params)? {
-        // println!("grammar: {}", serde_json::to_string(&grm).unwrap());
         let parser = app_state
             .parser_factory
             .create_parser_ext(grm, params.llg_log_level.to_log_level())?;
@@ -227,11 +383,6 @@ async fn mk_req_info(
         // to avoid double-application of temperature
         llg.temperature = req_params.temperature;
         req_params.temperature = 1.0;
-
-        // Test argmax
-        // llg.temperature = 1.0;
-        // req_params.temperature = 0.0;
-        // req_params.top_k = 1;
 
         req_params.use_logits_post_processor = true;
 
@@ -260,56 +411,130 @@ async fn mk_req_info(
     };
 
     if let Some(bos) = app_state.tok_bos {
-        if tokens.len() == 0 || tokens[0] != bos {
+        if tokens.is_empty() || tokens[0] != bos {
             tokens.insert(0, bos);
         }
-    } else if tokens.len() == 0 {
+    } else if tokens.is_empty() {
         // insert a space if all else fails
         tokens = app_state.tokenize_with_bos(" ");
     }
 
     let n_forks = req_params.num_return_sequences;
 
-    let req_init = RequestInit {
-        tokens,
-        params: req_params,
-        client_req_id,
-        is_run,
+    // For our first attempt, only load LoRA weights if load_lora_weights is set to "always"
+    let load_lora_weights = match params.load_lora_weights {
+        LoadLoraWeightsOption::Auto => false,
+        LoadLoraWeightsOption::Always => true,
+        LoadLoraWeightsOption::Never => false,
     };
+    let req_init = build_request_init(
+        tokens.clone(), req_params.clone(), client_req_id, is_run, &params, app_state, load_lora_weights,
+    )?;
     let prompt_tokens = req_init.tokens.len();
 
-    let (req_id, recv) = AsyncExecutor::lock().add_request(req_init, llg)?;
+    let (req_id, recv) = AsyncExecutor::lock().add_request(&req_init, llg.clone())?;
 
-    let info = ReqInfo {
+    let info = build_req_info(
         req_id,
+        n_forks,
         client_req_id,
-        prompt,
-        return_expanded_prompt: params.return_expanded_prompt.unwrap_or(false),
+        cmpl_id.clone(),
+        &prompt,
+        prompt_tokens,
+        params,
+        &app_state.tok_env,
         is_chat,
         is_run,
-        cmpl_id,
-        model_name: params.model.clone(),
-        created: SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs(),
-        recv,
-        tok_env: app_state.tok_env.clone(),
-        forks: vec![ForkInfo::default(); n_forks as usize],
-        stop_words: params
-            .stop
-            .as_ref()
-            .map(|stops| stops.iter().map(|s| s.as_bytes().to_vec()).collect())
-            .unwrap_or_default(),
-        usage: Usage {
-            prompt_tokens,
-            completion_tokens: 0,
-            total_tokens: prompt_tokens,
-        },
+        recv
+    )?;
+
+    let response = if params.stream {
+        match completions_stream(info).await {
+            Ok(r) => r.into_response(),
+            Err(err) => {
+                if is_lora_cache_miss_error(&err) {
+                    log::warn!("LoRA cache miss: {:?}", err);
+
+                    // If necessary, retry with LoRA weights set
+                    if params.load_lora_weights == LoadLoraWeightsOption::Auto {
+                        log::info!("Retrying with LoRA weights set");
+                        let req_init = build_request_init(
+                            tokens.clone(), req_params.clone(), client_req_id, is_run, &params, app_state, true,
+                        )?;
+                        let prompt_tokens = req_init.tokens.len();
+                    
+                        let (req_id, recv) = AsyncExecutor::lock().add_request(&req_init, llg.clone())?;
+                    
+                        let info = build_req_info(
+                            req_id,
+                            n_forks,
+                            client_req_id,
+                            cmpl_id.clone(),
+                            &prompt,
+                            prompt_tokens,
+                            params,
+                            &app_state.tok_env,
+                            is_chat,
+                            is_run,
+                            recv
+                        )?;
+
+                        completions_stream(info).await.into_response()
+                    } else {
+                        AppError::from(anyhow!(
+                            "LoRA model {:?} was not in cache and load_lora_weights is set to never: {:?}", params.lora_model, err
+                        )).into_response()
+                    }
+                } else {
+                    err.into_response()
+                }
+            },
+        }
+    } else {
+        match completions(info).await {
+            Ok(r) => r.into_response(),
+            Err(err) => {
+                if is_lora_cache_miss_error(&err) {
+                    log::warn!("LoRA cache miss: {:?}", err);
+
+                    // If necessary, retry with LoRA weights set
+                    if params.load_lora_weights == LoadLoraWeightsOption::Auto {
+                        log::info!("Retrying with LoRA weights set");
+                        let req_init = build_request_init(
+                            tokens.clone(), req_params.clone(), client_req_id, is_run, &params, app_state, true,
+                        )?;
+                        let prompt_tokens = req_init.tokens.len();
+                    
+                        let (req_id, recv) = AsyncExecutor::lock().add_request(&req_init, llg.clone())?;
+                    
+                        let info = build_req_info(
+                            req_id,
+                            n_forks,
+                            client_req_id,
+                            cmpl_id.clone(),
+                            &prompt,
+                            prompt_tokens,
+                            params,
+                            &app_state.tok_env,
+                            is_chat,
+                            is_run,
+                            recv
+                        )?;
+
+                        completions(info).await.into_response()
+                    } else {
+                        AppError::from(anyhow!(
+                            "LoRA model {:?} was not in cache and load_lora_weights is set to never: {:?}", params.lora_model, err
+                        )).into_response()
+                    }
+                } else {
+                    err.into_response()
+                }
+            },
+        }
     };
 
-    if params.stream {
-        Ok(completions_stream(info).await.into_response())
-    } else {
-        Ok(completions(info).await.into_response())
-    }
+    Ok(response)
 }
 
 pub async fn route_completions(

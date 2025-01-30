@@ -130,6 +130,17 @@ void tlc_shutdown(TlcExecutor* ctx)
     ctx->executor.shutdown();
 }
 
+tle::Shape _tlc_to_tle_shape(TlcShape tlc_shape)
+{
+    return tle::Shape(tlc_shape.dims_ptr, tlc_shape.num_dims);
+}
+
+tle::Tensor _tlc_to_tle_tensor(TlcTensor tlc_tensor)
+{
+    // The copyToCpu call at the end is required to make this Tensor manage its own memory
+    return tle::Tensor::of(static_cast<tle::DataType>(tlc_tensor.data_type), const_cast<void*>(tlc_tensor.data_ptr), _tlc_to_tle_shape(tlc_tensor.shape)).copyToCpu();
+}
+
 TlcStatus tlc_enqueue_request(TlcExecutor* ctx, TlcRequest const* request, TlcReqId* res)
 {
     TRY
@@ -167,6 +178,20 @@ TlcStatus tlc_enqueue_request(TlcExecutor* ctx, TlcRequest const* request, TlcRe
             req.setEndId(p.eos_token_id);
         if (ctx->has_logits_post_processor && p.use_logits_post_processor)
             req.setLogitsPostProcessorName(tle::Request::kBatchedPostProcessorName);
+
+        if (request->lora_params.lora_id) {
+            auto const& lp = request->lora_params;
+            std::optional<tle::Tensor> weights;
+            if (lp.weights.data_ptr) {
+                weights = _tlc_to_tle_tensor(lp.weights);
+            }
+            std::optional<tle::Tensor> config;
+            if (lp.config.data_ptr) {
+                config = _tlc_to_tle_tensor(lp.config);
+            }
+            tle::LoraConfig loraConfig(lp.lora_id, weights, config);
+            req.setLoraConfig(loraConfig);
+        }
 
         std::vector<tle::Request> requests;
         requests.emplace_back(std::move(req));
