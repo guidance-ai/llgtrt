@@ -1,6 +1,5 @@
 use crate::{ffi, TlcLogitsEntry};
 use anyhow::{ensure, Result};
-use half::{f16, bf16};
 use std::{
     ffi::{c_void, CStr, CString},
     fmt::Display,
@@ -9,7 +8,6 @@ use std::{
     sync::atomic::AtomicU32,
     time::Duration,
 };
-use ndarray::ArrayD;
 use safetensors::Dtype;
 
 pub type TokenId = u32;
@@ -239,29 +237,7 @@ const TLC_F16: i32 = 7;
 const TLC_F32: i32 = 8;
 const TLC_UNKNOWN: i32 = 9;
 
-fn _tlc_get_data_type<T: 'static>() -> i32 {
-    if std::any::TypeId::of::<T>() == std::any::TypeId::of::<bool>() {
-        TLC_BOOL
-    } else if std::any::TypeId::of::<T>() == std::any::TypeId::of::<u8>() {
-        TLC_U8
-    } else if std::any::TypeId::of::<T>() == std::any::TypeId::of::<i8>() {
-        TLC_I8
-    } else if std::any::TypeId::of::<T>() == std::any::TypeId::of::<i32>() {
-        TLC_I32
-    } else if std::any::TypeId::of::<T>() == std::any::TypeId::of::<i64>() {
-        TLC_I64
-    } else if std::any::TypeId::of::<T>() == std::any::TypeId::of::<bf16>() {
-        TLC_BF16
-    } else if std::any::TypeId::of::<T>() == std::any::TypeId::of::<f16>() {
-        TLC_F16
-    } else if std::any::TypeId::of::<T>() == std::any::TypeId::of::<f32>() {
-        TLC_F32
-    } else {
-        TLC_UNKNOWN
-    }
-}
-
-fn _tlc_convert_dtype(dtype: Dtype) -> i32 {
+fn tlc_convert_dtype(dtype: Dtype) -> i32 {
     match dtype {
         Dtype::BOOL => TLC_BOOL,
         Dtype::U8 => TLC_U8,
@@ -275,34 +251,7 @@ fn _tlc_convert_dtype(dtype: Dtype) -> i32 {
     }
 }
 
-fn _tlc_extract_arrayd<T: 'static>(array: ArrayD<T>) -> (ffi::TlcTensor, Vec<i64>, Vec<T>) 
-    where T: std::fmt::Debug
-{
-    let shape: Vec<i64> = array.shape().to_vec().iter().map(|&x| x as i64).collect();
-    
-    let ffi_shape = ffi::TlcShape {
-        dims_ptr: shape.as_ptr(),
-        num_dims: shape.len(),
-    };
-
-    // Get the values in pure vector form
-    let (data_vec, _offset) = array.into_raw_vec_and_offset();
-    let data_ptr = data_vec.as_ptr();
-    let void_data_ptr = data_ptr as *const c_void;
-
-    // Return the converted shape vector along with the converted Tensor to ensure that it outlives this function.
-    (
-        ffi::TlcTensor {
-            shape: ffi_shape,
-            data_ptr: void_data_ptr,
-            data_type: _tlc_get_data_type::<T>(),
-        },
-        shape,
-        data_vec
-    )
-}
-
-fn _tlc_extract_tensor(tensor: &Tensor) -> ffi::TlcTensor 
+fn tlc_extract_tensor(tensor: &Tensor) -> ffi::TlcTensor 
 {
     let ffi_shape = ffi::TlcShape {
         dims_ptr: tensor.size.as_ptr(),
@@ -316,7 +265,7 @@ fn _tlc_extract_tensor(tensor: &Tensor) -> ffi::TlcTensor
     ffi::TlcTensor {
         shape: ffi_shape,
         data_ptr: void_data_ptr,
-        data_type: _tlc_convert_dtype(tensor.dtype),
+        data_type: tlc_convert_dtype(tensor.dtype),
     }
 }
 
@@ -352,14 +301,6 @@ impl Executor {
             "Request must have at least one token"
         );
 
-        // These declarations make sure that the shape and data vectors extracted from the tensors live long
-        // enough to survive the call to tlc_enqueue_request.  Otherwise the data we pass through to the C++
-        // layer will become invalid.
-        let _weights_shape: Vec<i64>;
-        let _weights_vec: Vec<bf16>;
-        let _config_shape: Vec<i64>;
-        let _config_vec: Vec<i32>;
-
         let mut arg = ffi::TlcRequest {
             tokens: init.tokens.as_ptr() as *mut i32,
             num_tokens: init.tokens.len() as u32,
@@ -375,10 +316,10 @@ impl Executor {
                 config: ffi::TlcTensor::default(),
             };
             if let Some(weights) = &lora_params.weights {
-                lp.weights = _tlc_extract_tensor(&weights);
+                lp.weights = tlc_extract_tensor(&weights);
             }
             if let Some(config) = &lora_params.config {
-                lp.config = _tlc_extract_tensor(&config);
+                lp.config = tlc_extract_tensor(&config);
             }
             arg.lora_params = lp;
         }

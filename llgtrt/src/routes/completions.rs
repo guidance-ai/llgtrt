@@ -385,6 +385,16 @@ async fn mk_req_info(
         req_params.temperature = 1.0;
 
         req_params.use_logits_post_processor = true;
+
+        // If we do that, we need to make sure we return the tokens forced
+        // by the grammar to the user. Currently we don't have infra for that,
+        // so instead we just start the parser without the prompt.
+        //
+        // if is_chat {
+        //     tokens.extend_from_slice(&llg.process_prompt(vec![]));
+        // } else {
+        //     tokens = llg.process_prompt(tokens);
+        // }
         llg.start_without_prompt();
 
         let mut r = vec![Box::new(llg)];

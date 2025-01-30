@@ -4,11 +4,13 @@ TensorRT provides full support for parameter-efficient finetuning via a technicq
 
 The following extra steps are required during setup:
 
-1. Compile the base model weights with the LoRA module activated.
-2. Convert each set of LoRA weights from standard Huggingface format to a specialized tensor format compatible with TensorRT.  Store these in a directory accessible from your TensorRT installation.
+1. Build the base model engine with the LoRA module activated.
+2. Extract each set of LoRA weights from standard Huggingface format to a specialized tensor format compatible with TensorRT.  Store these in a directory accessible from your TensorRT installation.
 3. Launch llgtrt/TensorRT with an extra parameter pointing to your LoRA weights.
 
-During inference, TensorRT maintains a cache of LoRA weights within GPU memory where the precise number of LoRA models that can fit in the cache varies based on your configuration.  To perform inference using a specific LoRA model you must first load its weights into the cache keyed by a unique integer identifier.  Once weights are loaded then subsequent inference requests may be made using the integer Id alone.  Depending on the size of your cache, loading a new set of LoRA weights may result in another set being evicted from the cache.
+During inference, TensorRT maintains a cache of LoRA weights within GPU memory where the precise number of LoRA models that can fit in the cache varies based on your configuration.  To perform inference using a specific LoRA model TensorRT must first load its weights into the cache, which will happen automatically as needed.  Once weights are loaded then subsequent inference requests will be made without needing to load weights.  Depending on the size of your cache, loading a new set of LoRA weights may result in another set being evicted from the cache.
+(for those familiar with TensorRT: internally TensorRT uses an integer Id to represent a loaded set of weights.  Llgtrt manages these Ids for you, obviating the need to
+refer to them directly)
 
 ## Setup details
 

@@ -25,8 +25,5 @@ minijinja = { version = "2.3.1", features = ["preserve_order", "loop_controls", 
 chrono = "0.4.38"
 json5 = "0.4.1"
 minijinja-contrib = { version = "2.3.1", features = ["pycompat"] }
-ndarray = "0.16.1"
-ndarray-npy = "0.9.1"
-half = "2.4.1"
 safetensors = "0.5.2"
 memmap2 = "0.9.5"
