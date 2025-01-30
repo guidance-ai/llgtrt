@@ -1,6 +1,7 @@
 //! https://platform.openai.com/docs/api-reference/completions/create
 use anyhow::{anyhow, bail, ensure, Error, Result};
 use async_stream::try_stream;
+use axum::body::Body;
 use axum::extract::State;
 use axum::http::HeaderMap;
 use axum::response::sse::{Event, Sse};
@@ -360,6 +361,17 @@ fn build_req_info(
     Ok(info)
 }
 
+async fn completions_stream_or_not(
+    stream: bool,
+    info: ReqInfo,
+) -> Result<Response<Body>, AppError> {
+    if stream {
+        completions_stream(info).await.map(|r| r.into_response())
+    } else {
+        completions(info).await.map(|r| r.into_response())
+    }
+}
+
 async fn mk_req_info(
     app_state: &AppState,
     prompt: String,
@@ -471,107 +483,54 @@ async fn mk_req_info(
         recv,
     )?;
 
-    let response = if params.stream {
-        match completions_stream(info).await {
-            Ok(r) => r.into_response(),
-            Err(err) => {
-                if is_lora_cache_miss_error(&err) {
-                    log::warn!("LoRA cache miss: {:?}", err);
+    match completions_stream_or_not(params.stream, info).await {
+        Ok(r) => Ok(r),
+        Err(err) => {
+            if is_lora_cache_miss_error(&err) {
+                log::warn!("LoRA cache miss: {}", err);
 
-                    // If necessary, retry with LoRA weights set
-                    if params.load_lora_weights == LoadLoraWeightsOption::Auto {
-                        log::info!("Retrying with LoRA weights set");
-                        let req_init = build_request_init(
-                            tokens.clone(),
-                            req_params.clone(),
-                            client_req_id,
-                            is_run,
-                            &params,
-                            app_state,
-                            true,
-                        )?;
-                        let prompt_tokens = req_init.tokens.len();
+                // If necessary, retry with LoRA weights set
+                if params.load_lora_weights == LoadLoraWeightsOption::Auto {
+                    log::info!("Retrying with LoRA weights set");
+                    let req_init = build_request_init(
+                        tokens.clone(),
+                        req_params.clone(),
+                        client_req_id,
+                        is_run,
+                        &params,
+                        app_state,
+                        true,
+                    )?;
+                    let prompt_tokens = req_init.tokens.len();
 
-                        let (req_id, recv) =
-                            AsyncExecutor::lock().add_request(&req_init, llg.clone())?;
+                    let (req_id, recv) =
+                        AsyncExecutor::lock().add_request(&req_init, llg.clone())?;
 
-                        let info = build_req_info(
-                            req_id,
-                            n_forks,
-                            client_req_id,
-                            cmpl_id.clone(),
-                            &prompt,
-                            prompt_tokens,
-                            params,
-                            &app_state.tok_env,
-                            is_chat,
-                            is_run,
-                            recv,
-                        )?;
+                    let info = build_req_info(
+                        req_id,
+                        n_forks,
+                        client_req_id,
+                        cmpl_id.clone(),
+                        &prompt,
+                        prompt_tokens,
+                        params,
+                        &app_state.tok_env,
+                        is_chat,
+                        is_run,
+                        recv,
+                    )?;
 
-                        completions_stream(info).await.into_response()
-                    } else {
-                        AppError::from(anyhow!(
-                            "LoRA model {:?} was not in cache and load_lora_weights is set to never: {:?}", params.lora_model, err
-                        )).into_response()
-                    }
+                    completions_stream_or_not(params.stream, info).await
                 } else {
-                    err.into_response()
+                    Ok(AppError::from(anyhow!(
+                            "LoRA model {:?} was not in cache and load_lora_weights is set to never: {}", params.lora_model, err
+                        )).into_response())
                 }
+            } else {
+                Ok(err.into_response())
             }
         }
-    } else {
-        match completions(info).await {
-            Ok(r) => r.into_response(),
-            Err(err) => {
-                if is_lora_cache_miss_error(&err) {
-                    log::warn!("LoRA cache miss: {:?}", err);
-
-                    // If necessary, retry with LoRA weights set
-                    if params.load_lora_weights == LoadLoraWeightsOption::Auto {
-                        log::info!("Retrying with LoRA weights set");
-                        let req_init = build_request_init(
-                            tokens.clone(),
-                            req_params.clone(),
-                            client_req_id,
-                            is_run,
-                            &params,
-                            app_state,
-                            true,
-                        )?;
-                        let prompt_tokens = req_init.tokens.len();
-
-                        let (req_id, recv) =
-                            AsyncExecutor::lock().add_request(&req_init, llg.clone())?;
-
-                        let info = build_req_info(
-                            req_id,
-                            n_forks,
-                            client_req_id,
-                            cmpl_id.clone(),
-                            &prompt,
-                            prompt_tokens,
-                            params,
-                            &app_state.tok_env,
-                            is_chat,
-                            is_run,
-                            recv,
-                        )?;
-
-                        completions(info).await.into_response()
-                    } else {
-                        AppError::from(anyhow!(
-                            "LoRA model {:?} was not in cache and load_lora_weights is set to never: {:?}", params.lora_model, err
-                        )).into_response()
-                    }
-                } else {
-                    err.into_response()
-                }
-            }
-        }
-    };
-
-    Ok(response)
+    }
 }
 
 pub async fn route_completions(
