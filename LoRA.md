@@ -51,7 +51,7 @@ exit
 
 ### Extract LoRA weights
 
-TensorRT cannot read LoRA weights directly from Huggingface safetensors format. So we provide a Python-based utility to extract weights into a simplified "tensor" format that TensorRT can read.
+TensorRT cannot read LoRA weights directly from Huggingface safetensors format. So we provide a Python-based utility to extract weights into a simplified format (also safetensors-based) that TensorRT can read.  More specifically, the generated .safetensors file contains two tensors: "weights" (containing the actual LoRA weights) and "config" (containing a tensor representation of the LoRA layers affected).
 Note that these weights are simply converted -- unlike the base model they are not compiled into an execution graph.
 The scripts/extrct_lora.py utility performs the extraction.  It should be run within the llgtrt container.
 
