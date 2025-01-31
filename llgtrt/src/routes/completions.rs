@@ -198,8 +198,8 @@ fn req_lora_params_from_openai(
     if let Some(lora_root) = lora_root {
         if let Some(lora_model) = &params.lora_model {
             let base_path: &Path = Path::new(lora_root.as_str());
-            let (weights, config) = load_lora_tensors(base_path, lora_model)?;
             if load_lora_weights {
+                let (weights, config) = load_lora_tensors(base_path, lora_model)?;
                 Ok(Some(LoraParams {
                     lora_id: lora_cache.resolve_id(lora_model),
                     weights: Some(weights),
