@@ -1488,7 +1488,7 @@ dependencies = [
 
 [[package]]
 name = "llguidance"
-version = "0.6.11"
+version = "0.6.12"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -1510,7 +1510,7 @@ dependencies = [
 
 [[package]]
 name = "llguidance_py"
-version = "0.6.11"
+version = "0.6.12"
 dependencies = [
  "bytemuck",
  "llguidance",
