@@ -28,6 +28,7 @@ RUN cargo install rustfilt
 RUN mkdir -p /tmp/reqs
 
 # if this fails, run 'git submodule update --init' first
+
 COPY TensorRT-LLM/examples/llama/requirements.txt /tmp/reqs/
 # COPY TensorRT-LLM/docker/common/install_mpi4py.sh /tmp/reqs/
 # COPY TensorRT-LLM/docker/common/install_tensorrt.sh /tmp/reqs/
@@ -35,15 +36,20 @@ COPY TensorRT-LLM/examples/llama/requirements.txt /tmp/reqs/
 # RUN bash /tmp/reqs/install_mpi4py.sh
 # RUN bash /tmp/reqs/install_tensorrt.sh
 
-RUN cd /tmp/reqs && pip install --upgrade -r requirements.txt
+RUN cd /tmp/reqs && \
+    pip install \
+        --extra-index-url https://pypi.nvidia.com/ \
+        --upgrade -r requirements.txt && \
+    rm -rf /root/.cache/pip
 
 # more packages for this image
 RUN pip install \
  torch transformers bitsandbytes \
  pytest ujson numpy requests mypy maturin[zig] \
  guidance huggingface_hub tokenizers jsonschema \
- pandas matplotlib plotly wheel
-RUN pip uninstall -y guidance
+ pandas matplotlib plotly wheel && \
+ pip uninstall -y guidance && \
+ rm -rf /root/.cache/pip
 
 # RUN pip install --upgrade transformers
 
