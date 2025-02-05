@@ -17,7 +17,7 @@ use crate::config::{config_info, CliConfig, LlgTrtConfig};
 use crate::jsonutil::json5_to_string;
 use crate::lora::LoraCache;
 use crate::state::AppState;
-use crate::{jsonutil, routes};
+use crate::{jsonutil, py, routes};
 
 async fn auth_middleware(
     req: Request<Body>,
@@ -76,8 +76,16 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
         log::info!("Loading JSON5 config from {:?}", file_name);
         let file_content = std::fs::read_to_string(&file_name)
             .map_err(|e| anyhow!("Error reading config file {}: {}", file_name, e))?;
-        let patch = json5::from_str::<serde_json::Value>(&file_content)
+        let mut patch = json5::from_str::<serde_json::Value>(&file_content)
             .map_err(|e| anyhow!("Error in JSON5 in {}: {}", file_name, e))?;
+        if let Some(p) = patch["py"]["input_processor"].as_str() {
+            let p = std::path::Path::new(p);
+            if p.is_relative() {
+                let p = std::path::Path::new(file_name).parent().unwrap().join(p);
+                patch["py"]["input_processor"] =
+                    serde_json::Value::String(p.to_str().unwrap().to_string());
+            }
+        }
         jsonutil::json_merge(&mut config, &patch);
     }
 
@@ -146,6 +154,15 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
     p.kv_cache_host_memory_bytes = runtime_config.kv_cache_host_memory_megabytes * 1024 * 1024;
 
     log::info!("Initializing executor with config: {:?}", exec_config);
+
+    if let Err(e) = py::init(&config.py) {
+        log::warn!("Error initializing Python: {}", e);
+    } else {
+        log::warn!("Python initialized successfully");
+    }
+    if true {
+        return Ok(());
+    }
 
     let (executor, tok_env, chat_builder) = AsyncExecutor::new(&cli_config, &config, exec_config)?;
 

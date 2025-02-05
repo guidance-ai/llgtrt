@@ -67,6 +67,12 @@ impl Default for TrtLlmRuntimeConfig {
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
+pub struct LlgTrtPyConfig {
+    /// Path to a Python script that does multi-modal and chat template processing
+    pub input_processor: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct LlgTrtConfig {
     /// TensorRT-LLM runtime parameters
     /// Defaults should be reasonable, otherwise see
@@ -80,6 +86,9 @@ pub struct LlgTrtConfig {
 
     /// Configuration for the LLGuidance constraint library
     pub llguidance: LlgConfig,
+
+    /// Configuration for the embedded Python API
+    pub py: LlgTrtPyConfig,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]

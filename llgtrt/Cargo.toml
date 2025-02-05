@@ -27,3 +27,4 @@ json5 = "0.4.1"
 minijinja-contrib = { version = "2.3.1", features = ["pycompat"] }
 safetensors = "0.5.2"
 memmap2 = "0.9.5"
+pyo3 = { version = "0.23.4", features = ["auto-initialize", "anyhow", "serde"] }
