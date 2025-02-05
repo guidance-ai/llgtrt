@@ -62,6 +62,7 @@ struct ReqData {
     // it seems to create them one by one
     // this array keeps track of assignment of req_id to llg state
     llg_infos: Vec<ConstraintInfo>,
+    min_p: f32,
     prompt_len: usize,
     is_run: bool,
 }
@@ -90,6 +91,7 @@ struct PendingSeq {
     prompt_len: usize,
     is_run: bool,
     entry: TlcLogitsEntry,
+    min_p: f32,
     stop: bool,
     // setting this will stop the sequence with given error
     error: Option<String>,
@@ -145,6 +147,11 @@ impl PendingSeq {
         let mask = step_res.sample_mask.as_ref().expect("No mask");
         self.entry.out_mask_pointer = copy_mask(mask);
         self.entry.temperature = llg.temperature;
+        self.entry.ln_min_p = if self.min_p > 0.0 {
+            self.min_p.ln()
+        } else {
+            -f32::MAX
+        };
 
         Ok(())
     }
@@ -160,6 +167,7 @@ impl PendingSeq {
             prompt_len: rd.prompt_len,
             entry: entry.clone(),
             stop: false,
+            min_p: rd.min_p,
             error: None,
             is_run: rd.is_run,
         }
@@ -276,6 +284,7 @@ extern "C" fn logits_processor(logits: *mut TlcLogitsEntry, num_logits: u32) {
             let entry = &mut entries[ps.entry_idx];
             entry.out_mask_pointer = ps.entry.out_mask_pointer;
             entry.temperature = ps.entry.temperature;
+            entry.ln_min_p = ps.entry.ln_min_p;
             let mut llg = ps.llg;
             if let Some(rd) = exec.req_data.get_mut(&entry.client_req_id()) {
                 if rd.logs.is_empty() {
@@ -427,6 +436,7 @@ impl AsyncExecutor {
         &mut self,
         init: &RequestInit,
         llgs: Vec<Box<Constraint>>,
+        min_p: f32,
     ) -> Result<(ReqId, UnboundedReceiver<StepResults>)> {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
 
@@ -448,6 +458,7 @@ impl AsyncExecutor {
                 llgs: llgs.into_iter().map(Some).collect(),
                 llg_infos: vec![],
                 prompt_len,
+                min_p,
                 logs: String::new(),
                 is_run,
             },

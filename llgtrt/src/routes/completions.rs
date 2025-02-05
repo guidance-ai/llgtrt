@@ -282,7 +282,16 @@ fn llg_grammar(params: &CommonCreateParams) -> Result<Option<TopLevelGrammar>> {
             log::debug!("using Lark grammar");
             lark_to_llguidance(lark_grammar)?
         }
-        _ => return Ok(None),
+        _ => {
+            if params.min_p > 0.0 {
+                // Returning a Dummy-grammar to enforce logit processing when min_p is set
+                let grm = TopLevelGrammar::from_regex(llguidance::api::RegexNode::Regex(
+                    ".*".to_string(),
+                ));
+                return Ok(Some(grm));
+            }
+            return Ok(None);
+        }
     };
     Ok(Some(grm))
 }
@@ -467,7 +476,7 @@ async fn mk_req_info(
     )?;
     let prompt_tokens = req_init.tokens.len();
 
-    let (req_id, recv) = AsyncExecutor::lock().add_request(&req_init, llg.clone())?;
+    let (req_id, recv) = AsyncExecutor::lock().add_request(&req_init, llg.clone(), params.min_p)?;
 
     let info = build_req_info(
         req_id,
@@ -504,7 +513,7 @@ async fn mk_req_info(
                     let prompt_tokens = req_init.tokens.len();
 
                     let (req_id, recv) =
-                        AsyncExecutor::lock().add_request(&req_init, llg.clone())?;
+                        AsyncExecutor::lock().add_request(&req_init, llg.clone(), params.min_p)?;
 
                     let info = build_req_info(
                         req_id,

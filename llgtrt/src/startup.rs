@@ -206,6 +206,7 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
             is_run: false,
         },
         vec![],
+        0.0,
     )?;
     while let Some(r) = rx.recv().await {
         warmup_tokens.extend_from_slice(&r.response.tokens);
