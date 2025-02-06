@@ -1,3 +1,4 @@
+use crate::chat::ChatParams;
 use crate::config::{CliConfig, LlgTrtConfig};
 use crate::routes::RequestInput;
 use anyhow::Result;
@@ -19,6 +20,8 @@ pub struct PyState {
 pub struct PluginInit {
     #[pyo3(get)]
     pub tokenizer_folder: String,
+    #[pyo3(get)]
+    pub chat_template: String,
 }
 
 #[pyfunction]
@@ -38,11 +41,24 @@ fn rt_error(e: impl Display) -> PyErr {
 }
 
 impl PyState {
-    pub fn run_input_processor(&self) -> RequestInput {
-        RequestInput {
-            tokens: vec![],
-            prompt: "".to_string(),
-        }
+    pub fn run_input_processor(&self, chat_params: ChatParams) -> Result<RequestInput> {
+        let chat_params = serde_json::to_string(&chat_params).unwrap();
+        Python::with_gil(|py| {
+            let loc = self.mk_locals(py);
+            loc.set_item("chat_params", chat_params).unwrap();
+            let r = self.eval(py, "plugin._process_input(chat_params)", Some(&loc))?;
+            let r = r.downcast::<PyDict>()
+                .map_err(|e| PyRuntimeError::new_err(format!("Expected dict, got {}", e)))?;
+            Ok(RequestInput {
+                tokens: self.get_field(r, "tokens")?.extract()?,
+                prompt: self.get_field(r, "prompt")?.extract()?,
+            })
+        })
+    }
+
+    fn get_field<'py>(&self, dict: &Bound<'py, PyDict>, field: &str) -> PyResult<Bound<'py, PyAny>> {
+        dict.get_item(field)?
+            .ok_or_else(|| PyRuntimeError::new_err(format!("Field {} not found", field)))
     }
 
     fn add_traceback(&self, py: Python<'_>, e: PyErr) -> PyErr {
@@ -55,6 +71,14 @@ impl PyState {
         //     &format!("File \"{}\", line ", self.file_name),
         // );
         PyRuntimeError::new_err(format!("{}\n{}", e, traceback))
+    }
+
+    fn mk_locals<'py>(&self, py: Python<'py>) -> Bound<'py, PyDict> {
+        let locals = PyDict::new(py);
+        if let Some(plugin) = &self.plugin_ref {
+            locals.set_item("plugin", plugin).unwrap();
+        }
+        locals
     }
 
     fn eval<'py>(
@@ -78,6 +102,7 @@ pub fn init(cli_config: &CliConfig, cfg: &LlgTrtConfig) -> Result<PyState> {
             .as_ref()
             .unwrap_or(&cli_config.engine)
             .to_string(),
+        chat_template: cfg.tokenizer.chat_template.clone().unwrap_or_default(),
     };
 
     let mut state = if let Some(inp) = &cfg.py.input_processor {

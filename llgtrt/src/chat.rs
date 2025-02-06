@@ -202,6 +202,7 @@ impl ChatCompletionMessageParams {
     }
 }
 
+#[derive(Debug, Serialize)]
 pub struct ChatParams<'a> {
     /// A list of messages comprising the conversation so far.
     pub messages: &'a Vec<ChatCompletionMessageParams>,

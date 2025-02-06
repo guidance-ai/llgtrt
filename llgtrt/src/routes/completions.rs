@@ -73,6 +73,7 @@ impl Display for ReqInfo {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct RequestInput {
     pub tokens: Vec<u32>,
     pub prompt: String,
@@ -606,27 +607,29 @@ pub async fn route_chat_completions(
         request.params.response_format = Some(ResponseFormat::Llguidance { grammar });
     }
 
-    let req_input = if app_state.py_state.enabled {
-        app_state.py_state.run_input_processor()
-    } else {
-        let text = if request.include_json_schema_in_prompt.unwrap_or(true) {
-            let json_schema = match &request.params.response_format {
-                Some(ResponseFormat::JsonSchema { json_schema }) => json_schema.schema.as_ref(),
-                _ => None,
-            };
-            app_state.chat_builder.build(ChatParams {
-                messages: &request.messages,
-                tools: &request.tools,
-                json_schema,
-            })?
-        } else {
-            // skip schema in prompt
-            app_state.chat_builder.build(ChatParams {
-                messages: &request.messages,
-                tools: &vec![],
-                json_schema: None,
-            })?
+    let chat_params = if request.include_json_schema_in_prompt.unwrap_or(true) {
+        let json_schema = match &request.params.response_format {
+            Some(ResponseFormat::JsonSchema { json_schema }) => json_schema.schema.as_ref(),
+            _ => None,
         };
+        ChatParams {
+            messages: &request.messages,
+            tools: &request.tools,
+            json_schema,
+        }
+    } else {
+        // skip schema in prompt
+        ChatParams {
+            messages: &request.messages,
+            tools: &vec![],
+            json_schema: None,
+        }
+    };
+
+    let req_input = if app_state.py_state.enabled {
+        app_state.py_state.run_input_processor(chat_params)?
+    } else {
+        let text = app_state.chat_builder.build(chat_params)?;
         RequestInput::from_text(&app_state, &text)
     };
 

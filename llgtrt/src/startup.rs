@@ -13,9 +13,11 @@ use toktrie::InferenceCapabilities;
 use trtllm_rs::{ClientReqId, ExecutorInit, RequestInit, RequestParams};
 
 use crate::async_exec::AsyncExecutor;
+use crate::chat::ChatParams;
 use crate::config::{config_info, CliConfig, LlgTrtConfig};
 use crate::jsonutil::json5_to_string;
 use crate::lora::LoraCache;
+use crate::routes::openai::{ChatCompletionMessageContentPart, ChatCompletionMessageParams};
 use crate::state::AppState;
 use crate::{jsonutil, py, routes};
 
@@ -156,8 +158,16 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
     log::info!("Initializing executor with config: {:?}", exec_config);
 
     let py_state = py::init(&cli_config, &config)?;
-    if true {
-        log::warn!("early stop");
+    if false {
+        let r = py_state.run_input_processor(ChatParams {
+            messages: &vec![ChatCompletionMessageParams::User {
+                content: ChatCompletionMessageContentPart::Text("Hello world!".to_string()),
+                name: None,
+            }],
+            tools: &vec![],
+            json_schema: None,
+        })?;
+        log::warn!("early stop {r:?}");
         return Ok(());
     }
 
