@@ -1,4 +1,7 @@
-use crate::{ffi, TlcLogitsEntry};
+use crate::{
+    ffi::{self, TlcTensor},
+    TlcLogitsEntry,
+};
 use anyhow::{ensure, Result};
 use safetensors::Dtype;
 use std::{
@@ -46,6 +49,22 @@ pub enum FinishReason {
 }
 
 pub type RequestParams = ffi::TlcRequestParams;
+
+impl Default for ffi::TlcPromptParams {
+    fn default() -> Self {
+        ffi::TlcPromptParams {
+            prompt_table: TlcTensor::default(),
+            prompt_tasks: TlcTensor::default(),
+            mrope_rotary_sin_cos: TlcTensor::default(),
+            mrope_position_deltas: 0,
+            skip_cross_attn_blocks: TlcTensor::default(),
+            encoder_input_features: TlcTensor::default(),
+            encoder_output_length: -1,
+            cross_attention_masks: TlcTensor::default(),
+            input_position_ids: TlcTensor::default(),
+        }
+    }
+}
 
 impl Default for RequestParams {
     fn default() -> Self {
@@ -127,6 +146,8 @@ pub struct RequestInit {
     pub params: RequestParams,
     pub lora_params: Option<LoraParams>,
 }
+
+unsafe impl Send for ffi::TlcPromptParams {}
 
 pub struct Executor {
     inner: *mut ffi::TlcExecutor,
@@ -251,20 +272,23 @@ fn tlc_convert_dtype(dtype: Dtype) -> i32 {
     }
 }
 
-fn tlc_extract_tensor(tensor: &Tensor) -> ffi::TlcTensor {
-    let ffi_shape = ffi::TlcShape {
-        dims_ptr: tensor.size.as_ptr(),
-        num_dims: tensor.size.len(),
-    };
+impl Tensor {
+    pub fn as_tlc_tensor(&self) -> ffi::TlcTensor {
+        let tensor = self;
+        let ffi_shape = ffi::TlcShape {
+            dims_ptr: tensor.size.as_ptr(),
+            num_dims: tensor.size.len(),
+        };
 
-    // Get the values in pure vector form
-    let data_ptr = tensor.data.as_ptr();
-    let void_data_ptr = data_ptr as *const c_void;
+        // Get the values in pure vector form
+        let data_ptr = tensor.data.as_ptr();
+        let void_data_ptr = data_ptr as *const c_void;
 
-    ffi::TlcTensor {
-        shape: ffi_shape,
-        data_ptr: void_data_ptr,
-        data_type: tlc_convert_dtype(tensor.dtype),
+        ffi::TlcTensor {
+            shape: ffi_shape,
+            data_ptr: void_data_ptr,
+            data_type: tlc_convert_dtype(tensor.dtype),
+        }
     }
 }
 
@@ -293,7 +317,11 @@ impl Executor {
         }
     }
 
-    pub fn enqueue_request(&mut self, init: &RequestInit) -> Result<ReqId> {
+    pub fn enqueue_request(
+        &mut self,
+        init: &RequestInit,
+        prompt_params: Option<&ffi::TlcPromptParams>,
+    ) -> Result<ReqId> {
         ensure!(self.can_enqueue_request(), "Cannot enqueue request");
         ensure!(
             init.tokens.len() > 0,
@@ -306,7 +334,12 @@ impl Executor {
             params: init.params.clone(),
             client_req_id: init.client_req_id.0,
             lora_params: ffi::TlcLoraParams::default(),
+            prompt_params: ffi::TlcPromptParams::default(),
         };
+
+        if let Some(pp) = prompt_params {
+            arg.prompt_params = pp.clone();
+        }
 
         if let Some(lora_params) = &init.lora_params {
             let mut lp = ffi::TlcLoraParams {
@@ -315,10 +348,10 @@ impl Executor {
                 config: ffi::TlcTensor::default(),
             };
             if let Some(weights) = &lora_params.weights {
-                lp.weights = tlc_extract_tensor(&weights);
+                lp.weights = weights.as_tlc_tensor();
             }
             if let Some(config) = &lora_params.config {
-                lp.config = tlc_extract_tensor(&config);
+                lp.config = config.as_tlc_tensor();
             }
             arg.lora_params = lp;
         }

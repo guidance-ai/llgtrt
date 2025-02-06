@@ -89,18 +89,21 @@ extern "C"
     } TlcInitParams;
 
     // TensorRT tensor class support
-    typedef struct {
-        const int64_t* dims_ptr;
+    typedef struct
+    {
+        int64_t const* dims_ptr;
         size_t num_dims;
     } TlcShape;
 
-    typedef struct {
+    typedef struct
+    {
         int32_t data_type;
-        const void *data_ptr;
+        void const* data_ptr;
         TlcShape shape;
     } TlcTensor;
 
-    typedef struct {
+    typedef struct
+    {
         uint64_t lora_id;
         TlcTensor weights;
         TlcTensor config;
@@ -126,11 +129,31 @@ extern "C"
 
     typedef struct
     {
+        // PromptTuningConfig
+        TlcTensor prompt_table;
+        TlcTensor prompt_tasks; // vec<u64>
+
+        // MropeConfig
+        TlcTensor mrope_rotary_sin_cos;
+        int32_t mrope_position_deltas;
+
+        TlcTensor skip_cross_attn_blocks;
+
+        TlcTensor encoder_input_features;
+        int32_t encoder_output_length;
+        TlcTensor cross_attention_masks;
+
+        TlcTensor input_position_ids; // vec<u32>
+    } TlcPromptParams;
+
+    typedef struct
+    {
         int32_t* tokens;
         uint32_t num_tokens;
         TlcClientId client_req_id;
         TlcRequestParams params;
         TlcLoraParams lora_params;
+        TlcPromptParams prompt_params;
     } TlcRequest;
 
     /// @brief The reason why the model stopped generating tokens for a request.

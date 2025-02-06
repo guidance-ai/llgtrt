@@ -9,6 +9,15 @@ use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use std::ffi::CStr;
 use std::fmt::Display;
+use trtllm_rs::TlcPromptParams;
+
+pub struct PyPromptParams {
+    pub tlc_prompt_params: TlcPromptParams,
+    // holding this makes sure tlc_prompt_params memory is not dropped
+    pub tensor_ref: pyo3::PyObject,
+}
+unsafe impl Send for PyPromptParams {}
+unsafe impl Sync for PyPromptParams {}
 
 pub struct PyState {
     pub enabled: bool,
@@ -55,7 +64,7 @@ impl PyState {
                 json_schema: None,
             })
             .expect("Failed to run input processor");
-        log::warn!("--test-py result: {r:?}");
+        log::warn!("--test-py result: {:?}", r.prompt);
     }
 
     pub fn run_input_processor(&self, chat_params: ChatParams) -> Result<RequestInput> {
@@ -73,6 +82,7 @@ impl PyState {
             Ok(RequestInput {
                 tokens: self.get_field(r, "tokens")?.extract()?,
                 prompt: self.get_field(r, "prompt")?.extract()?,
+                prompt_params: None,
             })
         })
     }

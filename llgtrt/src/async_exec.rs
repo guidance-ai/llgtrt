@@ -7,7 +7,7 @@ use std::{
     fmt::Display,
     panic::{self, AssertUnwindSafe},
     ptr,
-    sync::{Mutex, MutexGuard},
+    sync::{Arc, Mutex, MutexGuard},
 };
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use toktrie::{SimpleVob, TokEnv};
@@ -19,6 +19,7 @@ use trtllm_rs::{
 use crate::{
     chat::ChatBuilder,
     config::{CliConfig, LlgTrtConfig},
+    py::PyPromptParams,
     routes::openai::FinishReason,
     tokenizer::setup_tokenizer,
 };
@@ -64,6 +65,8 @@ struct ReqData {
     llg_infos: Vec<ConstraintInfo>,
     prompt_len: usize,
     is_run: bool,
+    // this needs to be here, so the tensor memory passed to trtllm is not dropped
+    _prompt_params: Option<Arc<PyPromptParams>>,
 }
 
 impl Display for ReqData {
@@ -426,6 +429,7 @@ impl AsyncExecutor {
     pub fn add_request(
         &mut self,
         init: &RequestInit,
+        prompt_params: Option<Arc<PyPromptParams>>,
         llgs: Vec<Box<Constraint>>,
     ) -> Result<(ReqId, UnboundedReceiver<StepResults>)> {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
@@ -436,9 +440,10 @@ impl AsyncExecutor {
         let prompt_len = init.tokens.len();
         let is_run = init.is_run;
 
-        // we're locked here, so it's safe to insert only after enqueuing
-        let req_id = self.executor.enqueue_request(init)?;
+        let pp = prompt_params.as_ref().map(|p| &p.tlc_prompt_params);
 
+        // we're locked here, so it's safe to insert only after enqueuing
+        let req_id = self.executor.enqueue_request(init, pp)?;
         self.req_data.insert(
             client_req_id,
             ReqData {
@@ -450,6 +455,7 @@ impl AsyncExecutor {
                 prompt_len,
                 logs: String::new(),
                 is_run,
+                _prompt_params: prompt_params,
             },
         );
         self.req_to_client.insert(req_id, client_req_id);

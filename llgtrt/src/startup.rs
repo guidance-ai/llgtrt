@@ -226,6 +226,7 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
             lora_params: None,
             is_run: false,
         },
+        None,
         vec![],
     )?;
     while let Some(r) = rx.recv().await {

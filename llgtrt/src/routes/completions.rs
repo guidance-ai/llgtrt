@@ -24,6 +24,7 @@ use crate::async_exec::{map_finish_reason, AsyncExecutor, StepResults};
 use crate::chat::ChatParams;
 use crate::error::AppError;
 use crate::lora::LoraCache;
+use crate::py::PyPromptParams;
 use crate::routes::api_ext::{tools_to_schema, LlgLogLevel};
 use crate::routes::openai::{JsonSchemaOptions, LoadLoraWeightsOption, ResponseFormat, ToolChoice};
 use crate::state::AppState;
@@ -73,11 +74,10 @@ impl Display for ReqInfo {
     }
 }
 
-#[derive(Debug, Clone)]
 pub struct RequestInput {
     pub tokens: Vec<u32>,
     pub prompt: String,
-    // multi-modal data coming in here
+    pub prompt_params: Option<Arc<PyPromptParams>>,
 }
 
 impl RequestInput {
@@ -85,6 +85,7 @@ impl RequestInput {
         Self {
             tokens: app_state.tokenize_with_bos(text),
             prompt: text.to_string(),
+            prompt_params: None,
         }
     }
 }
@@ -484,7 +485,11 @@ async fn mk_req_info(
     )?;
     let prompt_tokens = req_init.tokens.len();
 
-    let (req_id, recv) = AsyncExecutor::lock().add_request(&req_init, llg.clone())?;
+    let (req_id, recv) = AsyncExecutor::lock().add_request(
+        &req_init,
+        req_input.prompt_params.clone(),
+        llg.clone(),
+    )?;
 
     let info = build_req_info(
         req_id,
@@ -520,8 +525,11 @@ async fn mk_req_info(
                     )?;
                     let prompt_tokens = req_init.tokens.len();
 
-                    let (req_id, recv) =
-                        AsyncExecutor::lock().add_request(&req_init, llg.clone())?;
+                    let (req_id, recv) = AsyncExecutor::lock().add_request(
+                        &req_init,
+                        req_input.prompt_params.clone(),
+                        llg.clone(),
+                    )?;
 
                     let info = build_req_info(
                         req_id,
@@ -550,6 +558,7 @@ async fn mk_req_info(
     }
 }
 
+// #[axum::debug_handler]
 pub async fn route_completions(
     _headers: HeaderMap,
     State(app_state): State<Arc<AppState>>,
