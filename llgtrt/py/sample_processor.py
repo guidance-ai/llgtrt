@@ -1,4 +1,5 @@
 import llgtrt_base
+import torch
 
 
 class Plugin(llgtrt_base.PluginBase):
@@ -8,5 +9,15 @@ class Plugin(llgtrt_base.PluginBase):
         )
         assert isinstance(rendered, str)
         tokens = self.tokenizer.encode(rendered, add_special_tokens=False)
-        print(tokens)
-        return {"prompt": rendered, "tokens": tokens}
+
+        # tensor-making placeholder
+        tokens_tensor = torch.tensor(tokens, device="cuda").unsqueeze(0)
+
+        # make sure we synchronize torch before returning
+        torch.cuda.current_stream().synchronize()
+
+        return {
+            "prompt": rendered,
+            "tokens": tokens,
+            "tokens_tensor": llgtrt_base.wrap_tensor(tokens_tensor),
+        }

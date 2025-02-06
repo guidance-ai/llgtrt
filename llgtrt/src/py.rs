@@ -47,8 +47,12 @@ impl PyState {
             let loc = self.mk_locals(py);
             loc.set_item("chat_params", chat_params).unwrap();
             let r = self.eval(py, "plugin._process_input(chat_params)", Some(&loc))?;
-            let r = r.downcast::<PyDict>()
+            let r = r
+                .downcast::<PyDict>()
                 .map_err(|e| PyRuntimeError::new_err(format!("Expected dict, got {}", e)))?;
+            let tensor_dim: (PyObject, usize, Vec<usize>) =
+                self.get_field(r, "tokens_tensor")?.extract()?;
+            println!("tensor_dim: {:?}", tensor_dim);
             Ok(RequestInput {
                 tokens: self.get_field(r, "tokens")?.extract()?,
                 prompt: self.get_field(r, "prompt")?.extract()?,
@@ -56,7 +60,11 @@ impl PyState {
         })
     }
 
-    fn get_field<'py>(&self, dict: &Bound<'py, PyDict>, field: &str) -> PyResult<Bound<'py, PyAny>> {
+    fn get_field<'py>(
+        &self,
+        dict: &Bound<'py, PyDict>,
+        field: &str,
+    ) -> PyResult<Bound<'py, PyAny>> {
         dict.get_item(field)?
             .ok_or_else(|| PyRuntimeError::new_err(format!("Field {} not found", field)))
     }

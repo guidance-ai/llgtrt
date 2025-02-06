@@ -1,6 +1,13 @@
 import llgtrt_native
 import transformers
 import json
+import torch
+
+
+def wrap_tensor(t: torch.Tensor):
+    assert t.is_contiguous()
+    assert t.device.type == "cuda"
+    return (t, t.data_ptr(), tuple(t.shape))
 
 
 class PluginBase:
