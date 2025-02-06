@@ -3,17 +3,29 @@ import transformers
 import json
 import torch
 
-WrappedTensor = tuple[torch.Tensor, int, tuple[int, ...]]
+from typing import Any
+
+WrappedTensor = tuple[torch.Tensor, int, int, tuple[int, ...]]
+
+
+def _wrap(t: torch.Tensor) -> WrappedTensor:
+    tp = llgtrt_native.torch_dtype(str(t.dtype))
+    return (t, tp, t.data_ptr(), tuple(t.shape))
 
 
 def wrap_tensor(t: torch.Tensor) -> WrappedTensor:
     assert t.is_contiguous()
     assert t.device.type == "cuda"
-    return (t, t.data_ptr(), tuple(t.shape))
+    return _wrap(t)
+
+
+def wrap_buffer(elts: list[int], dtype: torch.dtype) -> Any:
+    t = torch.tensor(elts, dtype=dtype, device="cpu")
+    return _wrap(t)
 
 
 def is_wrapped_tensor(t: WrappedTensor) -> bool:
-    return isinstance(t, tuple) and len(t) == 3 and isinstance(t[0], torch.Tensor)
+    return isinstance(t, tuple) and len(t) == 4 and isinstance(t[0], torch.Tensor)
 
 
 class ProcessInputResult:
@@ -57,6 +69,11 @@ class PluginBase:
             ch["tools"] = None
         r = self.process_input(messages=ch["messages"], tools=ch["tools"])
         assert isinstance(r, ProcessInputResult)
+
+        if r.prompt_tasks is not None:
+            r.prompt_tasks = wrap_buffer(r.prompt_tasks, torch.int64)
+        if r.input_position_ids is not None:
+            r.input_position_ids = wrap_buffer(r.input_position_ids, torch.int64)
 
         # wrap tensors if any
         for k, v in r.__dict__.items():

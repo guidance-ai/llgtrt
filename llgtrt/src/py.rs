@@ -10,7 +10,7 @@ use pyo3::types::PyDict;
 use std::ffi::CStr;
 use std::fmt::Display;
 use std::sync::Arc;
-use trtllm_rs::{TlcPromptParams, TlcTensor};
+use trtllm_rs::{TlcDataType, TlcPromptParams, TlcShape, TlcTensor};
 
 pub struct PyPromptParams {
     pub tlc_prompt_params: TlcPromptParams,
@@ -38,13 +38,26 @@ pub struct PluginInit {
 }
 
 #[pyfunction]
-fn rust_function(x: i32, y: i32) -> i32 {
-    x + y
+fn torch_dtype(tp: &str) -> PyResult<i32> {
+    let r = match tp {
+        "torch.float32" => TlcDataType::TLC_DT_F32,
+        "torch.float16" => TlcDataType::TLC_DT_F16,
+        "torch.int8" => TlcDataType::TLC_DT_I8,
+        "torch.int32" => TlcDataType::TLC_DT_I32,
+        "torch.bool" => TlcDataType::TLC_DT_BOOL,
+        "torch.uint8" => TlcDataType::TLC_DT_U8,
+        "torch.float8" => TlcDataType::TLC_DT_F8,
+        "torch.bfloat16" => TlcDataType::TLC_DT_BF16,
+        "torch.int64" => TlcDataType::TLC_DT_I64,
+        "torch.int4" => TlcDataType::TLC_DT_I4,
+        _ => return Err(PyRuntimeError::new_err("Unknown torch dtype")),
+    };
+    Ok(r as i32)
 }
 
 #[pymodule]
 fn llgtrt_native(_py: Python<'_>, m: &Bound<PyModule>) -> PyResult<()> {
-    m.add_function(wrap_pyfunction!(rust_function, m)?)?;
+    m.add_function(wrap_pyfunction!(torch_dtype, m)?)?;
     m.add_class::<PluginInit>()?;
     Ok(())
 }
@@ -81,6 +94,16 @@ impl PyState {
             let mut pp = TlcPromptParams::default();
 
             pp.prompt_table = self.get_tensor(&r2, "prompt_table")?;
+            pp.prompt_tasks = self.get_tensor(&r2, "prompt_tasks")?;
+            pp.mrope_rotary_sin_cos = self.get_tensor(&r2, "mrope_rotary_sin_cos")?;
+            pp.mrope_position_deltas =
+                self.get_i32(&r2, "mrope_position_deltas", pp.mrope_position_deltas)?;
+            pp.skip_cross_attn_blocks = self.get_tensor(&r2, "skip_cross_attn_blocks")?;
+            pp.encoder_input_features = self.get_tensor(&r2, "encoder_input_features")?;
+            pp.encoder_output_length =
+                self.get_i32(&r2, "encoder_output_length", pp.encoder_output_length)?;
+            pp.cross_attention_masks = self.get_tensor(&r2, "cross_attention_masks")?;
+            pp.input_position_ids = self.get_tensor(&r2, "input_position_ids")?;
 
             Ok(RequestInput {
                 tokens: self.get_field(r2, "tokens")?.extract()?,
@@ -93,10 +116,27 @@ impl PyState {
         })
     }
 
+    fn get_i32<'py>(&self, dict: &Bound<'py, PyDict>, field: &str, defl: i32) -> PyResult<i32> {
+        let t: Option<i32> = self.get_field(dict, field)?.extract()?;
+        Ok(t.unwrap_or(defl))
+    }
+
     fn get_tensor<'py>(&self, dict: &Bound<'py, PyDict>, field: &str) -> PyResult<TlcTensor> {
-        let t: Option<(PyObject, usize, Vec<usize>)> = self.get_field(dict, field)?.extract()?;
-        if let Some((_, _dtype, _shape)) = t {
-            Ok(TlcTensor::default())
+        let t: Option<(PyObject, u32, usize, Vec<i64>)> = self.get_field(dict, field)?.extract()?;
+        if let Some((_, dtype, addr, shape)) = t {
+            let dtype = TlcDataType::try_from(dtype).map_err(rt_error)?;
+            // some sanity checks
+            if addr == 0 {
+                return Err(PyRuntimeError::new_err("NULL tensor address"));
+            }
+            if addr % 8 != 0 {
+                return Err(PyRuntimeError::new_err("Tensor address not aligned"));
+            }
+            Ok(TlcTensor {
+                data_type: dtype,
+                shape: TlcShape::from_slice(&shape),
+                data_ptr: addr as *const _,
+            })
         } else {
             Ok(TlcTensor::default())
         }

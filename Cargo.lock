@@ -1486,6 +1486,7 @@ dependencies = [
  "memmap2",
  "minijinja",
  "minijinja-contrib",
+ "num-traits",
  "pyo3",
  "rand",
  "rayon",

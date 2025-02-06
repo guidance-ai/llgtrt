@@ -193,6 +193,15 @@ tle::Tensor _tlc_to_tle_tensor_no_copy(TlcTensor tlc_tensor)
     return tle::detail::ofITensor(std::move(itensor));
 }
 
+static void check_dtype(TlcTensor t, TlcDataType expected, char const* context)
+{
+    if (t.data_type != expected)
+    {
+        throw std::runtime_error(std::string("Expected ") + context + " to have data type " + std::to_string(expected)
+            + ", got " + std::to_string(t.data_type));
+    }
+}
+
 static bool tlc_tensor_is_none(TlcTensor const& tlc_tensor)
 {
     return tlc_tensor.data_ptr == nullptr;
@@ -253,6 +262,7 @@ TlcStatus tlc_enqueue_request(TlcExecutor* ctx, TlcRequest const* request, TlcRe
             std::optional<std::vector<tle::IdType>> inputTokenExtraIds = std::nullopt;
             if (!tlc_tensor_is_none(pp.prompt_tasks))
             {
+                check_dtype(pp.prompt_tasks, TLC_DT_I64, "prompt_tasks");
                 auto ptr = (tle::IdType*) pp.prompt_tasks.data_ptr;
                 auto len = tlc_shape_volume(pp.prompt_tasks.shape);
                 inputTokenExtraIds = std::vector(ptr, ptr + len);
@@ -282,6 +292,7 @@ TlcStatus tlc_enqueue_request(TlcExecutor* ctx, TlcRequest const* request, TlcRe
 
         if (!tlc_tensor_is_none(pp.input_position_ids))
         {
+            check_dtype(pp.input_position_ids, TLC_DT_I32, "input_position_ids");
             auto ptr = (std::int32_t*) pp.input_position_ids.data_ptr;
             auto len = tlc_shape_volume(pp.input_position_ids.shape);
             req.setPositionIds(std::vector(ptr, ptr + len));
