@@ -135,7 +135,7 @@ void tlc_shutdown(TlcExecutor* ctx)
 
 tle::Shape _tlc_to_tle_shape(TlcShape tlc_shape)
 {
-    return tle::Shape(tlc_shape.dims_ptr, tlc_shape.num_dims);
+    return tle::Shape(tlc_shape.dims, tlc_shape.num_dims);
 }
 
 static tle::DataType to_tle_datatype(TlcDataType t)
@@ -187,7 +187,7 @@ tle::Tensor _tlc_to_tle_tensor_no_copy(TlcTensor tlc_tensor)
     TLLM_CHECK_WITH_INFO(tlc_tensor.shape.num_dims <= nvinfer1::Dims::MAX_DIMS, "Number of dimensions is too large");
     nvinfer1::Dims shape{};
     shape.nbDims = tlc_tensor.shape.num_dims;
-    std::copy(tlc_tensor.shape.dims_ptr, tlc_tensor.shape.dims_ptr + tlc_tensor.shape.num_dims, shape.d);
+    std::copy(tlc_tensor.shape.dims, tlc_tensor.shape.dims + tlc_tensor.shape.num_dims, shape.d);
     auto itensor = tensorrt_llm::runtime::ITensor::wrap(
         (void*) tlc_tensor.data_ptr, to_nvinfer_datatype(tlc_tensor.data_type), shape);
     return tle::detail::ofITensor(std::move(itensor));
@@ -202,7 +202,7 @@ static size_t tlc_shape_volume(TlcShape const& shape)
 {
     size_t volume = 1;
     for (size_t i = 0; i < shape.num_dims; ++i)
-        volume *= shape.dims_ptr[i];
+        volume *= shape.dims[i];
     return volume;
 }
 

@@ -103,10 +103,12 @@ extern "C"
         TlcEngineParams engine_params;
     } TlcInitParams;
 
+#define TLC_MAX_SHAPE 8
+
     // TensorRT tensor class support
     typedef struct
     {
-        int64_t const* dims_ptr;
+        int64_t dims[TLC_MAX_SHAPE];
         size_t num_dims;
     } TlcShape;
 

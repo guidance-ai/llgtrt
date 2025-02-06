@@ -219,9 +219,21 @@ impl Default for ffi::TlcEngineParams {
 impl Default for ffi::TlcShape {
     fn default() -> Self {
         ffi::TlcShape {
-            dims_ptr: ptr::null(),
+            dims: [0; ffi::TLC_MAX_SHAPE as usize],
             num_dims: 0,
         }
+    }
+}
+
+impl ffi::TlcShape {
+    pub fn from_slice(shape: &[i64]) -> Self {
+        assert!(shape.len() <= ffi::TLC_MAX_SHAPE as usize);
+        let mut r = ffi::TlcShape::default();
+        r.num_dims = shape.len();
+        for (i, &d) in shape.iter().enumerate() {
+            r.dims[i] = d;
+        }
+        r
     }
 }
 
@@ -248,10 +260,7 @@ impl Default for ffi::TlcLoraParams {
 impl Tensor {
     pub fn as_tlc_tensor(&self) -> ffi::TlcTensor {
         let tensor = self;
-        let ffi_shape = ffi::TlcShape {
-            dims_ptr: tensor.size.as_ptr(),
-            num_dims: tensor.size.len(),
-        };
+        let ffi_shape = ffi::TlcShape::from_slice(&tensor.size);
 
         // Get the values in pure vector form
         let data_ptr = tensor.data.as_ptr();
