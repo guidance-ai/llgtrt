@@ -10,6 +10,7 @@ use pyo3::types::PyDict;
 use std::ffi::CStr;
 use std::fmt::Display;
 use std::sync::Arc;
+use toktrie::{TokEnv, TokTrie, TokenId};
 use trtllm_rs::{TlcDataType, TlcPromptParams, TlcShape, TlcTensor};
 
 pub struct PyPromptParams {
@@ -35,6 +36,10 @@ pub struct PluginInit {
     pub chat_template: String,
     #[pyo3(get)]
     pub hf_model_dir: String,
+    #[pyo3(get)]
+    pub bos_token: Option<String>,
+    #[pyo3(get)]
+    pub eos_token: Option<String>,
 }
 
 #[pyfunction]
@@ -185,7 +190,17 @@ impl PyState {
     }
 }
 
-pub fn init(cli_config: &CliConfig, cfg: &LlgTrtConfig) -> Result<PyState> {
+fn token_name(trie: &TokTrie, tok: TokenId) -> String {
+    let b = trie.token(tok);
+    if b.len() > 0 && b[0] == TokTrie::SPECIAL_TOKEN_MARKER {
+        String::from_utf8_lossy(&b[1..]).to_string()
+    } else {
+        String::from_utf8_lossy(&b[0..]).to_string()
+    }
+}
+
+pub fn init(tok_env: &TokEnv, cli_config: &CliConfig, cfg: &LlgTrtConfig) -> Result<PyState> {
+    let trie = tok_env.tok_trie();
     let plugin_init = PluginInit {
         tokenizer_folder: cli_config
             .tokenizer
@@ -194,6 +209,8 @@ pub fn init(cli_config: &CliConfig, cfg: &LlgTrtConfig) -> Result<PyState> {
             .to_string(),
         chat_template: cfg.tokenizer.chat_template.clone().unwrap_or_default(),
         hf_model_dir: cfg.py.hf_model_dir.clone().unwrap_or_default(),
+        bos_token: trie.info().tok_bos.map(|t| token_name(trie, t)),
+        eos_token: Some(token_name(trie, trie.info().tok_eos)),
     };
 
     let mut state = if let Some(inp) = &cfg.py.input_processor {

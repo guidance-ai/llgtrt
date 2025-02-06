@@ -23,6 +23,7 @@ class Plugin(llgtrt_base.PluginBase):
         r = llgtrt_base.ProcessInputResult(prompt=rendered, tokens=tokens)
 
         # testing tensor passing
-        r.prompt_table = torch.tensor(tokens, device="cuda").unsqueeze(0)
+        r.prompt_table = torch.rand([100, 200], device="cuda", dtype=torch.float32)
+        r.prompt_tasks = [0 for _ in tokens]
 
         return r

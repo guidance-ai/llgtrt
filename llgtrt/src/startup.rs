@@ -17,6 +17,7 @@ use crate::config::{config_info, CliConfig, LlgTrtConfig};
 use crate::jsonutil::json5_to_string;
 use crate::lora::LoraCache;
 use crate::state::AppState;
+use crate::tokenizer::setup_tokenizer;
 use crate::{jsonutil, py, routes};
 
 async fn auth_middleware(
@@ -160,7 +161,8 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
     log::info!("Initializing executor with config: {:?}", exec_config);
 
     if cli_config.test_py {
-        let py_state = py::init(&cli_config, &config).expect("Error initializing Python");
+        let (tok_env, _) = setup_tokenizer(&cli_config, &config)?;
+        let py_state = py::init(&tok_env, &cli_config, &config).expect("Error initializing Python");
         py_state.test();
         return Ok(());
     }
@@ -169,7 +171,7 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
 
     // we only get here on rank 0
 
-    let py_state = py::init(&cli_config, &config)?;
+    let py_state = py::init(&tok_env, &cli_config, &config)?;
 
     let mut parser_factory = ParserFactory::new(
         &tok_env,

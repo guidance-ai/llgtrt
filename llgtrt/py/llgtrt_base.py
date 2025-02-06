@@ -59,6 +59,8 @@ class PluginBase:
             clean_up_tokenization_spaces=False,  # ???
         )
         self.tokenizer.chat_template = init.chat_template
+        self.tokenizer.bos_token = init.bos_token
+        self.tokenizer.eos_token = init.eos_token
         toks = self.tokenizer.encode("Hello world")
         assert len(toks) > 0
         print("Plugin created")
