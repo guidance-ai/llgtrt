@@ -155,12 +155,9 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
 
     log::info!("Initializing executor with config: {:?}", exec_config);
 
-    if let Err(e) = py::init(&config.py) {
-        log::warn!("Error initializing Python: {}", e);
-    } else {
-        log::warn!("Python initialized successfully");
-    }
+    let py_state = py::init(&cli_config, &config)?;
     if true {
+        log::warn!("early stop");
         return Ok(());
     }
 
@@ -204,6 +201,7 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
         parser_factory,
         lora_root: cli_config.lora_root,
         lora_cache: LoraCache::new(),
+        py_state,
     };
 
     // warmup request

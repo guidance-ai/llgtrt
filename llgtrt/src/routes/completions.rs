@@ -73,6 +73,21 @@ impl Display for ReqInfo {
     }
 }
 
+pub struct RequestInput {
+    pub tokens: Vec<u32>,
+    pub prompt: String,
+    // multi-modal data coming in here
+}
+
+impl RequestInput {
+    pub fn from_text(app_state: &AppState, text: &str) -> Self {
+        Self {
+            tokens: app_state.tokenize_with_bos(text),
+            prompt: text.to_string(),
+        }
+    }
+}
+
 fn req_params_from_openai(params: &CommonCreateParams) -> Result<RequestParams> {
     ensure!(params.logit_bias.is_none(), "logit_bias not supported yet");
     ensure!(
@@ -374,13 +389,14 @@ async fn completions_stream_or_not(
 
 async fn mk_req_info(
     app_state: &AppState,
-    prompt: String,
+    req_input: RequestInput,
     params: &CommonCreateParams,
     is_chat: bool,
     is_run: bool,
 ) -> Result<Response, AppError> {
     let mut req_params = req_params_from_openai(params)?;
-    let mut tokens = app_state.tokenize_with_bos(&prompt);
+    let mut tokens = req_input.tokens;
+    let prompt = req_input.prompt;
     log::debug!("{}", app_state.tok_env.tok_trie().tokens_dbg(&tokens));
 
     let eos_token = if is_chat {
@@ -546,14 +562,9 @@ pub async fn route_completions(
         return Err(e.into());
     }
 
-    mk_req_info(
-        &app_state,
-        request.prompt[0].clone(),
-        &request.params,
-        false,
-        false,
-    )
-    .await
+    let req_input = RequestInput::from_text(&app_state, &request.prompt[0]);
+
+    mk_req_info(&app_state, req_input, &request.params, false, false).await
 }
 
 pub async fn route_chat_completions(
@@ -595,26 +606,31 @@ pub async fn route_chat_completions(
         request.params.response_format = Some(ResponseFormat::Llguidance { grammar });
     }
 
-    let chat_history = if request.include_json_schema_in_prompt.unwrap_or(true) {
-        let json_schema = match &request.params.response_format {
-            Some(ResponseFormat::JsonSchema { json_schema }) => json_schema.schema.as_ref(),
-            _ => None,
-        };
-        app_state.chat_builder.build(ChatParams {
-            messages: &request.messages,
-            tools: &request.tools,
-            json_schema,
-        })?
+    let req_input = if app_state.py_state.enabled {
+        app_state.py_state.run_input_processor()
     } else {
-        // skip schema in prompt
-        app_state.chat_builder.build(ChatParams {
-            messages: &request.messages,
-            tools: &vec![],
-            json_schema: None,
-        })?
+        let text = if request.include_json_schema_in_prompt.unwrap_or(true) {
+            let json_schema = match &request.params.response_format {
+                Some(ResponseFormat::JsonSchema { json_schema }) => json_schema.schema.as_ref(),
+                _ => None,
+            };
+            app_state.chat_builder.build(ChatParams {
+                messages: &request.messages,
+                tools: &request.tools,
+                json_schema,
+            })?
+        } else {
+            // skip schema in prompt
+            app_state.chat_builder.build(ChatParams {
+                messages: &request.messages,
+                tools: &vec![],
+                json_schema: None,
+            })?
+        };
+        RequestInput::from_text(&app_state, &text)
     };
 
-    mk_req_info(&app_state, chat_history, &request.params, true, false).await
+    mk_req_info(&app_state, req_input, &request.params, true, false).await
 }
 
 fn json_to_llg(schema: Value) -> Result<TopLevelGrammar> {
@@ -1065,6 +1081,7 @@ pub async fn route_llguidance(
     } else {
         request.prompt.clone().unwrap_or(String::new())
     };
+    let req_input = RequestInput::from_text(&app_state, &chat_history);
 
-    mk_req_info(&app_state, chat_history, &common, is_chat, true).await
+    mk_req_info(&app_state, req_input, &common, is_chat, true).await
 }
