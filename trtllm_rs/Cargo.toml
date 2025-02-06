@@ -7,7 +7,6 @@ edition = "2021"
 anyhow = "1.0.89"
 libc = "0.2.158"
 serde = { version = "1.0.210", features = ["derive"] }
-safetensors = "0.5.2"
 
 [build-dependencies]
 bindgen = "*"

@@ -2903,7 +2903,6 @@ dependencies = [
  "anyhow",
  "bindgen",
  "libc",
- "safetensors",
  "serde",
 ]
 

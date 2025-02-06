@@ -19,6 +19,7 @@ fn main() {
 
     let bindings = bindgen::Builder::default()
         .header("../trtllm-c/tlc.h")
+        .rustified_enum("TlcDataType")
         .generate()
         .expect("Unable to generate bindings");
 

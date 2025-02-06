@@ -7,9 +7,11 @@ use axum::http::HeaderMap;
 use axum::response::sse::{Event, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
+use core::panic;
 use futures_core::Stream;
 use llguidance::api::{GrammarWithLexer, TopLevelGrammar};
 use llguidance::{lark_to_llguidance, Constraint, JsonCompileOptions};
+use safetensors::Dtype;
 use serde_json::{json, Value};
 use std::fmt::Display;
 use std::path::Path;
@@ -17,7 +19,7 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc::UnboundedReceiver;
 use toktrie::TokEnv;
-use trtllm_rs::{ClientReqId, LoraParams, ReqId, RequestInit, RequestParams, Tensor};
+use trtllm_rs::{ClientReqId, LoraParams, ReqId, RequestInit, RequestParams, Tensor, TlcDataType};
 use uuid::Uuid;
 
 use crate::async_exec::{map_finish_reason, AsyncExecutor, StepResults};
@@ -190,7 +192,7 @@ fn load_lora_tensors<P: AsRef<Path>>(
     let config_size: Vec<i64> = config_view.shape().iter().map(|&x| x as i64).collect();
     let config_tensor = Tensor {
         size: config_size,
-        dtype: config_view.dtype(),
+        dtype: safetensors_dtype_to_tlc(config_view.dtype()),
         data: config_view.data().to_vec(),
     };
 
@@ -199,7 +201,7 @@ fn load_lora_tensors<P: AsRef<Path>>(
     let weights_size: Vec<i64> = weights_view.shape().iter().map(|&x| x as i64).collect();
     let weights_tensor = Tensor {
         size: weights_size,
-        dtype: weights_view.dtype(),
+        dtype: safetensors_dtype_to_tlc(weights_view.dtype()),
         data: weights_view.data().to_vec(),
     };
 
@@ -1096,4 +1098,23 @@ pub async fn route_llguidance(
     let req_input = RequestInput::from_text(&app_state, &chat_history);
 
     mk_req_info(&app_state, req_input, &common, is_chat, true).await
+}
+
+fn safetensors_dtype_to_tlc(dtype: Dtype) -> TlcDataType {
+    match dtype {
+        Dtype::BOOL => TlcDataType::TLC_DT_BOOL,
+        Dtype::U8 => TlcDataType::TLC_DT_U8,
+        Dtype::I8 => TlcDataType::TLC_DT_I8,
+        Dtype::F8_E4M3 => TlcDataType::TLC_DT_F8,
+        Dtype::F8_E5M2 => panic!("F8_E5M2 not supported"), // we support the other one
+        Dtype::F16 => TlcDataType::TLC_DT_F16,
+        Dtype::BF16 => TlcDataType::TLC_DT_BF16,
+        Dtype::I32 => TlcDataType::TLC_DT_I32,
+        Dtype::F32 => TlcDataType::TLC_DT_F32,
+        Dtype::I64 => TlcDataType::TLC_DT_I64,
+
+        Dtype::U64 | Dtype::U32 | Dtype::F64 | Dtype::I16 | Dtype::U16 | _ => {
+            panic!("unsupported dtype: {:?}", dtype)
+        }
+    }
 }

@@ -14,6 +14,21 @@ extern "C"
     typedef uint64_t TlcClientId;
     typedef char* TlcStatus;
 
+    // these match nvinfer1::DataType
+    typedef enum
+    {
+        TLC_DT_F32 = 0,
+        TLC_DT_F16 = 1,
+        TLC_DT_I8 = 2,
+        TLC_DT_I32 = 3,
+        TLC_DT_BOOL = 4,
+        TLC_DT_U8 = 5,
+        TLC_DT_F8 = 6,
+        TLC_DT_BF16 = 7,
+        TLC_DT_I64 = 8,
+        TLC_DT_I4 = 9,
+    } TlcDataType;
+
     typedef struct
     {
         TlcReqId _req_id;
@@ -97,7 +112,7 @@ extern "C"
 
     typedef struct
     {
-        int32_t data_type;
+        TlcDataType data_type;
         void const* data_ptr;
         TlcShape shape;
     } TlcTensor;

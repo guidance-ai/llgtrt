@@ -138,29 +138,48 @@ tle::Shape _tlc_to_tle_shape(TlcShape tlc_shape)
     return tle::Shape(tlc_shape.dims_ptr, tlc_shape.num_dims);
 }
 
-tle::Tensor _tlc_to_tle_tensor(TlcTensor tlc_tensor)
-{
-    // The copyToCpu call at the end is required to make this Tensor manage its own memory
-    return tle::Tensor::of(static_cast<tle::DataType>(tlc_tensor.data_type), const_cast<void*>(tlc_tensor.data_ptr),
-        _tlc_to_tle_shape(tlc_tensor.shape))
-        .copyToCpu();
-}
-
-static nvinfer1::DataType to_nvinfer_datatype(tle::DataType t)
+static tle::DataType to_tle_datatype(TlcDataType t)
 {
     switch (t)
     {
-    case tle::DataType::kBOOL: return nvinfer1::DataType::kBOOL;
-    case tle::DataType::kUINT8: return nvinfer1::DataType::kUINT8;
-    case tle::DataType::kINT8: return nvinfer1::DataType::kINT8;
-    case tle::DataType::kINT32: return nvinfer1::DataType::kINT32;
-    case tle::DataType::kINT64: return nvinfer1::DataType::kINT64;
-    case tle::DataType::kBF16: return nvinfer1::DataType::kBF16;
-    case tle::DataType::kFP8: return nvinfer1::DataType::kFP8;
-    case tle::DataType::kFP16: return nvinfer1::DataType::kHALF;
-    case tle::DataType::kFP32: return nvinfer1::DataType::kFLOAT;
+    case TLC_DT_BOOL: return tle::DataType::kBOOL;
+    case TLC_DT_U8: return tle::DataType::kUINT8;
+    case TLC_DT_I8: return tle::DataType::kINT8;
+    case TLC_DT_I32: return tle::DataType::kINT32;
+    case TLC_DT_I64: return tle::DataType::kINT64;
+    case TLC_DT_BF16: return tle::DataType::kBF16;
+    case TLC_DT_F8: return tle::DataType::kFP8;
+    case TLC_DT_F16: return tle::DataType::kFP16;
+    case TLC_DT_F32: return tle::DataType::kFP32;
     default: throw std::runtime_error("Unsupported data type");
     }
+}
+
+static nvinfer1::DataType to_nvinfer_datatype(TlcDataType t)
+{
+    static_assert((int) TLC_DT_F32 == (int) nvinfer1::DataType::kFLOAT);
+    static_assert((int) TLC_DT_F16 == (int) nvinfer1::DataType::kHALF);
+    static_assert((int) TLC_DT_I8 == (int) nvinfer1::DataType::kINT8);
+    static_assert((int) TLC_DT_I32 == (int) nvinfer1::DataType::kINT32);
+    static_assert((int) TLC_DT_BOOL == (int) nvinfer1::DataType::kBOOL);
+    static_assert((int) TLC_DT_U8 == (int) nvinfer1::DataType::kUINT8);
+    static_assert((int) TLC_DT_F8 == (int) nvinfer1::DataType::kFP8);
+    static_assert((int) TLC_DT_BF16 == (int) nvinfer1::DataType::kBF16);
+    static_assert((int) TLC_DT_I64 == (int) nvinfer1::DataType::kINT64);
+    static_assert((int) TLC_DT_I4 == (int) nvinfer1::DataType::kINT4);
+
+    if ((unsigned) t > (unsigned) nvinfer1::DataType::kINT4)
+        throw std::runtime_error("Unsupported data type");
+
+    return (nvinfer1::DataType) t;
+}
+
+tle::Tensor _tlc_to_tle_tensor(TlcTensor tlc_tensor)
+{
+    // The copyToCpu call at the end is required to make this Tensor manage its own memory
+    return tle::Tensor::of(to_tle_datatype(tlc_tensor.data_type), const_cast<void*>(tlc_tensor.data_ptr),
+        _tlc_to_tle_shape(tlc_tensor.shape))
+        .copyToCpu();
 }
 
 tle::Tensor _tlc_to_tle_tensor_no_copy(TlcTensor tlc_tensor)
@@ -170,7 +189,7 @@ tle::Tensor _tlc_to_tle_tensor_no_copy(TlcTensor tlc_tensor)
     shape.nbDims = tlc_tensor.shape.num_dims;
     std::copy(tlc_tensor.shape.dims_ptr, tlc_tensor.shape.dims_ptr + tlc_tensor.shape.num_dims, shape.d);
     auto itensor = tensorrt_llm::runtime::ITensor::wrap(
-        (void*) tlc_tensor.data_ptr, to_nvinfer_datatype((tle::DataType) tlc_tensor.data_type), shape);
+        (void*) tlc_tensor.data_ptr, to_nvinfer_datatype(tlc_tensor.data_type), shape);
     return tle::detail::ofITensor(std::move(itensor));
 }
 

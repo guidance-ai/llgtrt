@@ -9,7 +9,8 @@ use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use std::ffi::CStr;
 use std::fmt::Display;
-use trtllm_rs::TlcPromptParams;
+use std::sync::Arc;
+use trtllm_rs::{TlcPromptParams, TlcTensor};
 
 pub struct PyPromptParams {
     pub tlc_prompt_params: TlcPromptParams,
@@ -73,18 +74,32 @@ impl PyState {
             let loc = self.mk_locals(py);
             loc.set_item("chat_params", chat_params).unwrap();
             let r = self.eval(py, "plugin._process_input(chat_params)", Some(&loc))?;
-            let r = r
+            let r2 = r
                 .downcast::<PyDict>()
                 .map_err(|e| PyRuntimeError::new_err(format!("Expected dict, got {}", e)))?;
-            let test_tensor: (PyObject, usize, Vec<usize>) =
-                self.get_field(r, "prompt_table")?.extract()?;
-            println!("prompt_table: {:?}", test_tensor);
+
+            let mut pp = TlcPromptParams::default();
+
+            pp.prompt_table = self.get_tensor(&r2, "prompt_table")?;
+
             Ok(RequestInput {
-                tokens: self.get_field(r, "tokens")?.extract()?,
-                prompt: self.get_field(r, "prompt")?.extract()?,
-                prompt_params: None,
+                tokens: self.get_field(r2, "tokens")?.extract()?,
+                prompt: self.get_field(r2, "prompt")?.extract()?,
+                prompt_params: Some(Arc::new(PyPromptParams {
+                    tlc_prompt_params: pp,
+                    tensor_ref: r.into(),
+                })),
             })
         })
+    }
+
+    fn get_tensor<'py>(&self, dict: &Bound<'py, PyDict>, field: &str) -> PyResult<TlcTensor> {
+        let t: Option<(PyObject, usize, Vec<usize>)> = self.get_field(dict, field)?.extract()?;
+        if let Some((_, _dtype, _shape)) = t {
+            Ok(TlcTensor::default())
+        } else {
+            Ok(TlcTensor::default())
+        }
     }
 
     fn get_field<'py>(

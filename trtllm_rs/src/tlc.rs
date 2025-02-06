@@ -1,9 +1,8 @@
 use crate::{
     ffi::{self, TlcTensor},
-    TlcLogitsEntry,
+    TlcDataType, TlcLogitsEntry,
 };
 use anyhow::{ensure, Result};
-use safetensors::Dtype;
 use std::{
     ffi::{c_void, CStr, CString},
     fmt::Display,
@@ -117,7 +116,7 @@ impl ClientReqId {
 #[derive(Debug, Clone)]
 pub struct Tensor {
     pub size: Vec<i64>,
-    pub dtype: Dtype,
+    pub dtype: TlcDataType,
     pub data: Vec<u8>,
 }
 
@@ -125,7 +124,7 @@ impl Default for Tensor {
     fn default() -> Self {
         Tensor {
             size: vec![],
-            dtype: Dtype::F32,
+            dtype: TlcDataType::TLC_DT_F32,
             data: vec![],
         }
     }
@@ -229,7 +228,7 @@ impl Default for ffi::TlcShape {
 impl Default for ffi::TlcTensor {
     fn default() -> Self {
         ffi::TlcTensor {
-            data_type: 0,
+            data_type: TlcDataType::TLC_DT_F32,
             data_ptr: ptr::null(),
             shape: ffi::TlcShape::default(),
         }
@@ -243,32 +242,6 @@ impl Default for ffi::TlcLoraParams {
             weights: ffi::TlcTensor::default(),
             config: ffi::TlcTensor::default(),
         }
-    }
-}
-
-/// These constants line up with the DataType enum in TensorRT's types.h
-const TLC_BOOL: i32 = 0;
-const TLC_U8: i32 = 1;
-const TLC_I8: i32 = 2;
-const TLC_I32: i32 = 3;
-const TLC_I64: i32 = 4;
-const TLC_BF16: i32 = 5;
-//const TLC_F8: i32 = 6;  // TODO: find a way to support F8 correctly through Rust.
-const TLC_F16: i32 = 7;
-const TLC_F32: i32 = 8;
-const TLC_UNKNOWN: i32 = 9;
-
-fn tlc_convert_dtype(dtype: Dtype) -> i32 {
-    match dtype {
-        Dtype::BOOL => TLC_BOOL,
-        Dtype::U8 => TLC_U8,
-        Dtype::I8 => TLC_I8,
-        Dtype::I32 => TLC_I32,
-        Dtype::I64 => TLC_I64,
-        Dtype::BF16 => TLC_BF16,
-        Dtype::F16 => TLC_F16,
-        Dtype::F32 => TLC_F32,
-        _ => TLC_UNKNOWN,
     }
 }
 
@@ -287,7 +260,7 @@ impl Tensor {
         ffi::TlcTensor {
             shape: ffi_shape,
             data_ptr: void_data_ptr,
-            data_type: tlc_convert_dtype(tensor.dtype),
+            data_type: tensor.dtype,
         }
     }
 }
