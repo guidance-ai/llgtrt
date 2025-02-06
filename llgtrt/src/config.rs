@@ -70,6 +70,9 @@ impl Default for TrtLlmRuntimeConfig {
 pub struct LlgTrtPyConfig {
     /// Path to a Python script that does multi-modal and chat template processing
     pub input_processor: Option<String>,
+
+    /// Path to HuggingFace model directory
+    pub hf_model_dir: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -169,4 +172,8 @@ pub struct CliConfig {
     /// Print the chat template and exit
     #[arg(long, help_heading = CONFIG_OPTIONS)]
     pub print_chat_template: bool,
+
+    /// Test python plugin initialization and exit
+    #[arg(long)]
+    pub test_py: bool,
 }

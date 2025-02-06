@@ -8,6 +8,9 @@
 #include "tensorrt_llm/executor/executor.h"
 #include "tensorrt_llm/plugins/api/tllmPlugin.h"
 
+#include "tensorrt_llm/runtime/iTensor.h"
+#include <NvInferRuntime.h>
+
 #include "tlc.h"
 
 #define TRY try
@@ -139,6 +142,33 @@ tle::Tensor _tlc_to_tle_tensor(TlcTensor tlc_tensor)
 {
     // The copyToCpu call at the end is required to make this Tensor manage its own memory
     return tle::Tensor::of(static_cast<tle::DataType>(tlc_tensor.data_type), const_cast<void*>(tlc_tensor.data_ptr), _tlc_to_tle_shape(tlc_tensor.shape)).copyToCpu();
+}
+
+static nvinfer1::DataType to_nvinfer_datatype(tle::DataType t) {
+    switch (t) {
+    case tle::DataType::kBOOL: return nvinfer1::DataType::kBOOL;
+    case tle::DataType::kUINT8: return nvinfer1::DataType::kUINT8;
+    case tle::DataType::kINT8: return nvinfer1::DataType::kINT8;
+    case tle::DataType::kINT32: return nvinfer1::DataType::kINT32;
+    case tle::DataType::kINT64: return nvinfer1::DataType::kINT64;
+    case tle::DataType::kBF16: return nvinfer1::DataType::kBF16;
+    case tle::DataType::kFP8: return nvinfer1::DataType::kFP8;
+    case tle::DataType::kFP16: return nvinfer1::DataType::kHALF;
+    case tle::DataType::kFP32: return nvinfer1::DataType::kFLOAT;
+    default:
+        throw std::runtime_error("Unsupported data type");
+    }
+}
+
+tle::Tensor _tlc_to_tle_tensor_no_copy(TlcTensor tlc_tensor)
+{
+    TLLM_CHECK_WITH_INFO(tlc_tensor.shape.num_dims <= nvinfer1::Dims::MAX_DIMS, "Number of dimensions is too large");
+    nvinfer1::Dims shape{};
+    shape.nbDims = tlc_tensor.shape.num_dims;
+    std::copy(tlc_tensor.shape.dims_ptr, tlc_tensor.shape.dims_ptr + tlc_tensor.shape.num_dims, shape.d);
+    auto itensor = tensorrt_llm::runtime::ITensor::wrap((void*)tlc_tensor.data_ptr, 
+        to_nvinfer_datatype((tle::DataType)tlc_tensor.data_type), shape);
+    return tle::detail::ofITensor(std::move(itensor));
 }
 
 TlcStatus tlc_enqueue_request(TlcExecutor* ctx, TlcRequest const* request, TlcReqId* res)

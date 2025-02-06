@@ -1,5 +1,6 @@
 use crate::chat::ChatParams;
 use crate::config::{CliConfig, LlgTrtConfig};
+use crate::routes::openai::{ChatCompletionMessageContentPart, ChatCompletionMessageParams};
 use crate::routes::RequestInput;
 use anyhow::Result;
 use pyo3::exceptions::PyRuntimeError;
@@ -22,6 +23,8 @@ pub struct PluginInit {
     pub tokenizer_folder: String,
     #[pyo3(get)]
     pub chat_template: String,
+    #[pyo3(get)]
+    pub hf_model_dir: String,
 }
 
 #[pyfunction]
@@ -41,6 +44,20 @@ fn rt_error(e: impl Display) -> PyErr {
 }
 
 impl PyState {
+    pub fn test(&self) {
+        let r = self
+            .run_input_processor(ChatParams {
+                messages: &vec![ChatCompletionMessageParams::User {
+                    content: ChatCompletionMessageContentPart::Text("Hello world!".to_string()),
+                    name: None,
+                }],
+                tools: &vec![],
+                json_schema: None,
+            })
+            .expect("Failed to run input processor");
+        log::warn!("--test-py result: {r:?}");
+    }
+
     pub fn run_input_processor(&self, chat_params: ChatParams) -> Result<RequestInput> {
         let chat_params = serde_json::to_string(&chat_params).unwrap();
         Python::with_gil(|py| {
@@ -50,9 +67,9 @@ impl PyState {
             let r = r
                 .downcast::<PyDict>()
                 .map_err(|e| PyRuntimeError::new_err(format!("Expected dict, got {}", e)))?;
-            let tensor_dim: (PyObject, usize, Vec<usize>) =
-                self.get_field(r, "tokens_tensor")?.extract()?;
-            println!("tensor_dim: {:?}", tensor_dim);
+            let test_tensor: (PyObject, usize, Vec<usize>) =
+                self.get_field(r, "prompt_table")?.extract()?;
+            println!("prompt_table: {:?}", test_tensor);
             Ok(RequestInput {
                 tokens: self.get_field(r, "tokens")?.extract()?,
                 prompt: self.get_field(r, "prompt")?.extract()?,
@@ -111,6 +128,7 @@ pub fn init(cli_config: &CliConfig, cfg: &LlgTrtConfig) -> Result<PyState> {
             .unwrap_or(&cli_config.engine)
             .to_string(),
         chat_template: cfg.tokenizer.chat_template.clone().unwrap_or_default(),
+        hf_model_dir: cfg.py.hf_model_dir.clone().unwrap_or_default(),
     };
 
     let mut state = if let Some(inp) = &cfg.py.input_processor {

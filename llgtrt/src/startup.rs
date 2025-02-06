@@ -13,11 +13,9 @@ use toktrie::InferenceCapabilities;
 use trtllm_rs::{ClientReqId, ExecutorInit, RequestInit, RequestParams};
 
 use crate::async_exec::AsyncExecutor;
-use crate::chat::ChatParams;
 use crate::config::{config_info, CliConfig, LlgTrtConfig};
 use crate::jsonutil::json5_to_string;
 use crate::lora::LoraCache;
-use crate::routes::openai::{ChatCompletionMessageContentPart, ChatCompletionMessageParams};
 use crate::state::AppState;
 use crate::{jsonutil, py, routes};
 
@@ -80,14 +78,18 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
             .map_err(|e| anyhow!("Error reading config file {}: {}", file_name, e))?;
         let mut patch = json5::from_str::<serde_json::Value>(&file_content)
             .map_err(|e| anyhow!("Error in JSON5 in {}: {}", file_name, e))?;
-        if let Some(p) = patch["py"]["input_processor"].as_str() {
-            let p = std::path::Path::new(p);
-            if p.is_relative() {
-                let p = std::path::Path::new(file_name).parent().unwrap().join(p);
-                patch["py"]["input_processor"] =
-                    serde_json::Value::String(p.to_str().unwrap().to_string());
+
+        for py_path in &["input_processor", "hf_model_dir"] {
+            if let Some(p) = patch["py"][py_path].as_str() {
+                let p = std::path::Path::new(p);
+                if p.is_relative() {
+                    let p = std::path::Path::new(file_name).parent().unwrap().join(p);
+                    patch["py"][py_path] =
+                        serde_json::Value::String(p.to_str().unwrap().to_string());
+                }
             }
         }
+
         jsonutil::json_merge(&mut config, &patch);
     }
 
@@ -157,23 +159,17 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
 
     log::info!("Initializing executor with config: {:?}", exec_config);
 
-    let py_state = py::init(&cli_config, &config)?;
-    if false {
-        let r = py_state.run_input_processor(ChatParams {
-            messages: &vec![ChatCompletionMessageParams::User {
-                content: ChatCompletionMessageContentPart::Text("Hello world!".to_string()),
-                name: None,
-            }],
-            tools: &vec![],
-            json_schema: None,
-        })?;
-        log::warn!("early stop {r:?}");
+    if cli_config.test_py {
+        let py_state = py::init(&cli_config, &config).expect("Error initializing Python");
+        py_state.test();
         return Ok(());
     }
 
     let (executor, tok_env, chat_builder) = AsyncExecutor::new(&cli_config, &config, exec_config)?;
 
     // we only get here on rank 0
+
+    let py_state = py::init(&cli_config, &config)?;
 
     let mut parser_factory = ParserFactory::new(
         &tok_env,
