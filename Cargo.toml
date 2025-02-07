@@ -16,7 +16,7 @@ exclude = [
 resolver = "2"
 
 [profile.release]
-# debug = 1
+debug = 1
 
 [patch.'https://github.com/microsoft/derivre']
 derivre = { path = "derivre" }
