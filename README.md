@@ -78,9 +78,9 @@ trtllm-build --checkpoint_dir /models/model-ckpt \
 # Clean up checkpoint (optional)
 rm -rf /models/model-ckpt
 
-# Finally, copy tokenizer.json and tokenizer_config.json
-cp /models/Meta-Llama-3.1-8B-Instruct/tokenizer.json /models/model-engine
-cp /models/Meta-Llama-3.1-8B-Instruct/tokenizer_config.json /models/model-engine
+# Finally, copy all *.json files to engine folder
+# includes tokenizer files, but also multi-modal processing configuration if any
+cp /models/Meta-Llama-3.1-8B-Instruct/*.json /models/model-engine
 
 # Exit the container
 exit

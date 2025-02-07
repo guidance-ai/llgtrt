@@ -80,11 +80,14 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
         let mut patch = json5::from_str::<serde_json::Value>(&file_content)
             .map_err(|e| anyhow!("Error in JSON5 in {}: {}", file_name, e))?;
 
-        for py_path in &["input_processor", "hf_model_dir"] {
+        for py_path in &["input_processor", "hf_model_dir", "visual_engine_dir"] {
             if let Some(p) = patch["py"][py_path].as_str() {
                 let p = std::path::Path::new(p);
                 if p.is_relative() {
                     let p = std::path::Path::new(file_name).parent().unwrap().join(p);
+                    let p = p
+                        .canonicalize()
+                        .map_err(|e| anyhow!("Error canonicalizing path {}: {}", p.display(), e))?;
                     patch["py"][py_path] =
                         serde_json::Value::String(p.to_str().unwrap().to_string());
                 }
@@ -133,6 +136,29 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
         }
         print!("{}", config.tokenizer.chat_template.as_ref().unwrap());
         return Ok(());
+    }
+
+    if config.py.input_processor.is_none() {
+        let p = std::path::Path::new(&cli_config.engine)
+            .join("input_processor.py")
+            .canonicalize()?;
+        if p.exists() {
+            log::info!("Using input processor from {:?}", p);
+            config.py.input_processor = Some(p.to_str().unwrap().to_string());
+        }
+    }
+
+    if config.py.input_processor.is_some() {
+        if config.py.hf_model_dir.is_none() {
+            config.py.hf_model_dir = Some(cli_config.engine.clone());
+        }
+        if config.py.visual_engine_dir.is_none() {
+            let p = std::path::Path::new(&cli_config.engine).join("visual_engine");
+            config.py.visual_engine_dir = Some(p.to_str().unwrap().to_string());
+        }
+        if config.py.arguments.is_null() {
+            config.py.arguments = serde_json::Value::Object(Default::default());
+        }
     }
 
     let runtime_config = &config.runtime;

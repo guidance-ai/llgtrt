@@ -25,6 +25,12 @@
   },
   "kv_cache_host_memory_megabytes": {
    "#": "Host memory to use for KV cache"
+  },
+  "enable_batch_size_tuning": {
+   "#": "Control automatic tuning of batch size\nDefaults to true (unlike trtllm)"
+  },
+  "enable_max_num_tokens_tuning": {
+   "#": "Control automatic tuning of max num tokens\nDefaults to true (unlike trtllm)"
   }
  },
  "tokenizer": {
@@ -41,19 +47,19 @@
   "limits": {
    "#": "Override any of the parser limits.",
    "max_items_in_row": {
-    "#": "For non-ambiguous grammars, this is the maximum \"branching factor\" of the grammar.\nFor ambiguous grammars, this might get hit much quicker.\nDefault: 200"
+    "#": "For non-ambiguous grammars, this is the maximum \"branching factor\" of the grammar.\nFor ambiguous grammars, this might get hit much quicker.\nDefault: 2000"
    },
    "initial_lexer_fuel": {
-    "#": "How much \"fuel\" are we willing to spend to build initial lexer regex AST nodes.\nDefault: 1_000_000 (~20ms)"
+    "#": "How much \"fuel\" are we willing to spend to build initial lexer regex AST nodes.\nDefault: 1_000_000\nSpeed: 50k/ms"
    },
    "step_lexer_fuel": {
-    "#": "Maximum lexer fuel for computation of the whole token mask.\nDefault: 500_000 (~10ms)"
+    "#": "Maximum lexer fuel for computation of the whole token mask.\nDefault: 200_000\nSpeed: 14k/ms"
    },
    "step_max_items": {
-    "#": "Number of Earley items created for the whole token mask.\nDefault: 100_000 (~3ms)"
+    "#": "Number of Earley items created for the whole token mask.\nDefault: 50_000\nSpeed: 20k/ms"
    },
    "max_lexer_states": {
-    "#": "Maximum number of lexer states.\nDefault: 10_000"
+    "#": "Maximum number of lexer states.\nDefault: 50_000"
    },
    "max_grammar_size": {
     "#": "Maximum size of the grammar (symbols in productions)\nDefault: 500_000 (a few megabytes of JSON)"
@@ -61,6 +67,21 @@
   },
   "log_level": {
    "#": "Log level which goes to stderr. In-memory logs per-sequence are managed by ConstraintInit.log_level."
+  }
+ },
+ "py": {
+  "#": "Configuration for the embedded Python API",
+  "input_processor": {
+   "#": "Path to a Python script that does multi-modal and chat template processing\nDefaults to <engine>/input_processor.py if it exists"
+  },
+  "hf_model_dir": {
+   "#": "Path to HuggingFace model directory; defaults to engine directory"
+  },
+  "visual_engine_dir": {
+   "#": "Path to TRT-LLM visual engine; defaults to <engine>/visual_engine"
+  },
+  "arguments": {
+   "#": "Additional arguments passed to the Python script\nerde(default)]"
   }
  }
 }

@@ -5,8 +5,9 @@ use crate::routes::RequestInput;
 use anyhow::Result;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::ffi::c_str;
-use pyo3::prelude::*;
-use pyo3::types::PyDict;
+use pyo3::types::{PyDict, PyList, PyString};
+use pyo3::{prelude::*, BoundObject};
+use serde_json::Value;
 use std::ffi::CStr;
 use std::fmt::Display;
 use std::sync::Arc;
@@ -31,15 +32,22 @@ pub struct PyState {
 #[pyclass]
 pub struct PluginInit {
     #[pyo3(get)]
-    pub tokenizer_folder: String,
+    pub engine_dir: String,
+    #[pyo3(get)]
+    pub tokenizer_dir: String,
     #[pyo3(get)]
     pub chat_template: String,
-    #[pyo3(get)]
-    pub hf_model_dir: String,
     #[pyo3(get)]
     pub bos_token: Option<String>,
     #[pyo3(get)]
     pub eos_token: Option<String>,
+
+    #[pyo3(get)]
+    pub visual_engine_dir: String,
+    #[pyo3(get)]
+    pub hf_model_dir: String,
+    #[pyo3(get)]
+    pub arguments: PyObject,
 }
 
 #[pyfunction]
@@ -200,19 +208,6 @@ fn token_name(trie: &TokTrie, tok: TokenId) -> String {
 }
 
 pub fn init(tok_env: &TokEnv, cli_config: &CliConfig, cfg: &LlgTrtConfig) -> Result<PyState> {
-    let trie = tok_env.tok_trie();
-    let plugin_init = PluginInit {
-        tokenizer_folder: cli_config
-            .tokenizer
-            .as_ref()
-            .unwrap_or(&cli_config.engine)
-            .to_string(),
-        chat_template: cfg.tokenizer.chat_template.clone().unwrap_or_default(),
-        hf_model_dir: cfg.py.hf_model_dir.clone().unwrap_or_default(),
-        bos_token: trie.info().tok_bos.map(|t| token_name(trie, t)),
-        eos_token: Some(token_name(trie, trie.info().tok_eos)),
-    };
-
     let mut state = if let Some(inp) = &cfg.py.input_processor {
         log::info!("Reading Python script from {}", inp);
         PyState {
@@ -242,6 +237,24 @@ pub fn init(tok_env: &TokEnv, cli_config: &CliConfig, cfg: &LlgTrtConfig) -> Res
 
     pyo3::prepare_freethreaded_python();
     Python::with_gil(|py| {
+        let trie = tok_env.tok_trie();
+        let plugin_init = PluginInit {
+            engine_dir: cli_config.engine.clone(),
+            tokenizer_dir: cli_config
+                .tokenizer
+                .as_ref()
+                .unwrap_or(&cli_config.engine)
+                .to_string(),
+            chat_template: cfg.tokenizer.chat_template.clone().unwrap_or_default(),
+            bos_token: trie.info().tok_bos.map(|t| token_name(trie, t)),
+            eos_token: Some(token_name(trie, trie.info().tok_eos)),
+
+            // py
+            hf_model_dir: cfg.py.hf_model_dir.clone().unwrap_or_default(),
+            visual_engine_dir: cfg.py.visual_engine_dir.clone().unwrap_or_default(),
+            arguments: serde_value_to_py(py, &cfg.py.arguments).unwrap(),
+        };
+
         let native_mod = PyModule::new(py, "llgtrt_native")?;
         llgtrt_native(py, &native_mod)?;
 
@@ -271,4 +284,35 @@ pub fn init(tok_env: &TokEnv, cli_config: &CliConfig, cfg: &LlgTrtConfig) -> Res
         Ok(state)
     })
     .map_err(|e: PyErr| anyhow::anyhow!("Python error: {}", e))
+}
+
+fn serde_value_to_py<'py>(py: Python<'py>, value: &Value) -> PyResult<PyObject> {
+    match value {
+        Value::Null => Ok(py.None()),
+        Value::Bool(b) => Ok(b.into_pyobject(py).unwrap().into_any().unbind()),
+        Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                Ok(i.into_pyobject(py).unwrap().into_any().unbind())
+            } else if let Some(f) = n.as_f64() {
+                Ok(f.into_pyobject(py).unwrap().into_any().unbind())
+            } else {
+                Err(pyo3::exceptions::PyValueError::new_err("Invalid number"))
+            }
+        }
+        Value::String(s) => Ok(PyString::new(py, s).into()),
+        Value::Array(arr) => {
+            let py_list = PyList::empty(py);
+            for item in arr {
+                py_list.append(serde_value_to_py(py, item)?)?;
+            }
+            Ok(py_list.into())
+        }
+        Value::Object(obj) => {
+            let py_dict = PyDict::new(py);
+            for (key, val) in obj {
+                py_dict.set_item(key, serde_value_to_py(py, val)?)?;
+            }
+            Ok(py_dict.into())
+        }
+    }
 }

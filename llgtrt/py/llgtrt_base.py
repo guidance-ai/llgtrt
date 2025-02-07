@@ -28,6 +28,15 @@ def is_wrapped_tensor(t: WrappedTensor) -> bool:
     return isinstance(t, tuple) and len(t) == 4 and isinstance(t[0], torch.Tensor)
 
 
+def to_dict(init):
+    r = {}
+    for k in dir(init):
+        if k.startswith("_"):
+            continue
+        r[k] = getattr(init, k)
+    return r
+
+
 class ProcessInputResult:
     def __init__(self, prompt: str, tokens: list[int]):
         self.prompt = prompt
@@ -53,9 +62,13 @@ class ProcessInputResult:
 
 class PluginBase:
     def __init__(self, init: llgtrt_native.PluginInit):
-        print("Creating tokenizer from", init.tokenizer_folder)
+        d = to_dict(init)
+        d["chat_template"] = "..."
+        print("PluginInit: ", json.dumps(d, indent=2))
+
+        print("Creating tokenizer from", init.tokenizer_dir)
         self.tokenizer = transformers.PreTrainedTokenizerFast(
-            tokenizer_file=init.tokenizer_folder + "/tokenizer.json",
+            tokenizer_file=init.tokenizer_dir + "/tokenizer.json",
             clean_up_tokenization_spaces=False,  # ???
         )
         self.tokenizer.chat_template = init.chat_template

@@ -3,13 +3,11 @@ from llgtrt_native import PluginInit
 import torch
 import transformers
 
-
 class Plugin(llgtrt_base.PluginBase):
     def __init__(self, init: PluginInit):
         super().__init__(init)
-        if not init.hf_model_dir:
-            raise ValueError("hf_model_dir is required")
         self.processor = transformers.AutoProcessor.from_pretrained(init.hf_model_dir)
+
 
     def process_input(
         self, messages: list[dict], tools: list[dict]
