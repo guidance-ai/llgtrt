@@ -81,7 +81,7 @@
    "#": "Path to TRT-LLM visual engine; defaults to <engine>/visual_engine"
   },
   "arguments": {
-   "#": "Additional arguments passed to the Python script\nerde(default)]"
+   "#": "Additional arguments passed to the Python script"
   }
  }
 }

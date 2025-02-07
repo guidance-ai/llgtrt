@@ -3,9 +3,18 @@ import os
 import json
 import sys
 
-# Regular expressions for capturing struct definitions and their fields with comments
-struct_regex = re.compile(r"pub struct (\w+) \{(.*?)^\s*\}", re.DOTALL | re.MULTILINE)
-field_regex = re.compile(r"((?:\s*///\s*.*?\n)+)\s*(pub\s+)?(\w+):\s+([\w:<>]+),", re.DOTALL)
+field_regex = re.compile(
+    r"((?:\s*///\s*.*?\n)+)"          # capture one or more lines of doc comments
+    r"(?:\s*#\[[^\]]*\]\s*\n)*"        # optionally match attribute lines
+    r"\s*(pub\s+)?"                   # optionally match the 'pub' keyword
+    r"(\w+):\s+([\w:<>]+),",           # capture the field name and its type
+    re.DOTALL
+)
+
+struct_regex = re.compile(
+    r"pub struct (\w+) \{(.*?)^\s*\}",
+    re.DOTALL | re.MULTILINE
+)
 
 def extract_structs_from_rust_file(file_content):
     structs = {}
@@ -23,7 +32,7 @@ def extract_structs_from_rust_file(file_content):
             field_name = field_match.group(3).strip()
             field_type = field_match.group(4).strip()
             
-            # Join multiple lines of `///` comments with newline
+            # Join multiple lines of `///` comments with newline, removing the leading "///"
             comment = "\n".join([line.strip()[3:].strip() for line in raw_comment.splitlines()])
             
             fields[field_name] = {"#": comment, "type": field_type}
@@ -42,7 +51,7 @@ def resolve_struct_recursive(struct_name, structs_metadata):
         comment = field_metadata["#"]
         field_type = field_metadata["type"]
 
-        # Check if field type matches another struct, if so, recurse
+        # Check if field type matches another struct; if so, recurse
         if field_type in structs_metadata:
             resolved_fields[field_name] = {
                 "#": comment,
