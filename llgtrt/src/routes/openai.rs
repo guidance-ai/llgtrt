@@ -1,7 +1,7 @@
 use super::api_ext::LlgLogLevel;
 use llguidance::api::TopLevelGrammar;
 use serde::{Deserialize, Deserializer, Serialize};
-use std::{collections::HashMap, f32};
+use std::collections::HashMap;
 use toktrie::{TokTrie, TokenId};
 
 // https://platform.openai.com/docs/api-reference/chat/create
@@ -166,7 +166,7 @@ pub struct CommonCreateParams {
     #[serde(default = "default_top_p")]
     pub top_p: f32,
     /// Filters out tokens with probability less than min_p multiplied by the probability of the most likely token
-    #[serde(default = "default_min_p")]
+    #[serde(default)]
     pub min_p: f32,
     /// A unique identifier representing your end-user, which can help OpenAI to monitor and detect
     /// abuse.
@@ -259,10 +259,6 @@ fn default_top_p() -> f32 {
 
 fn default_min_tokens() -> usize {
     1
-}
-
-fn default_min_p() -> f32 {
-    0.0
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]

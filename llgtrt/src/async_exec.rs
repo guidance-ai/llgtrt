@@ -436,7 +436,6 @@ impl AsyncExecutor {
         &mut self,
         init: &RequestInit,
         llgs: Vec<Box<Constraint>>,
-        min_p: f32,
     ) -> Result<(ReqId, UnboundedReceiver<StepResults>)> {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
 
@@ -458,7 +457,7 @@ impl AsyncExecutor {
                 llgs: llgs.into_iter().map(Some).collect(),
                 llg_infos: vec![],
                 prompt_len,
-                min_p,
+                min_p: init.params.min_p,
                 logs: String::new(),
                 is_run,
             },

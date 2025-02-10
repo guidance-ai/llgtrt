@@ -118,6 +118,7 @@ extern "C"
         uint32_t eos_token_id;
         float temperature;
         float top_p;
+        float min_p;
         float frequency_penalty;
         float presence_penalty;
         float priority;
