@@ -76,7 +76,7 @@ class PluginBase:
         self.tokenizer.eos_token = init.eos_token
         toks = self.tokenizer.encode("Hello world")
         assert len(toks) > 0
-        print("Plugin created")
+        print("Base plugin created")
 
     def _process_input(self, chat_params: str) -> dict:
         ch = json.loads(chat_params)

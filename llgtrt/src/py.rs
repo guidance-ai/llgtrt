@@ -269,8 +269,8 @@ pub fn init(tok_env: &TokEnv, cli_config: &CliConfig, cfg: &LlgTrtConfig) -> Res
         sys_modules.set_item("llgtrt_base", base_module)?;
 
         let scr = CStr::from_bytes_with_nul(state.file_content.as_bytes()).map_err(rt_error)?;
-        let main_fn = CStr::from_bytes_with_nul(state.file_name.as_bytes()).map_err(rt_error)?;
-        let main_module = PyModule::from_code(py, scr, main_fn, c"_plugin")
+        let main_file = CStr::from_bytes_with_nul(state.file_name.as_bytes()).map_err(rt_error)?;
+        let main_module = PyModule::from_code(py, scr, main_file, c"_plugin")
             .map_err(|e| state.add_traceback(py, e))?;
         sys_modules.set_item("_plugin", main_module.clone())?;
         // we don't add it anywhere
@@ -278,7 +278,10 @@ pub fn init(tok_env: &TokEnv, cli_config: &CliConfig, cfg: &LlgTrtConfig) -> Res
         let locals = PyDict::new(py);
         locals.set_item("init", plugin_init)?;
         locals.set_item("_plugin", main_module)?;
+        log::debug!("Executing plugin init");
         let result = state.eval(py, "_plugin.Plugin(init)", Some(&locals))?;
+        log::info!("Plugin init result: {:?}", result);
+
         state.plugin_ref = Some(result.into());
 
         Ok(state)
