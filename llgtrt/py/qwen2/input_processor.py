@@ -18,9 +18,10 @@ from llgtrt_native import PluginInit
 class Plugin(llgtrt_base.PluginBase):
     def __init__(self, init: PluginInit):
         super().__init__(init)
-        self.tokenizer = AutoTokenizer.from_pretrained(init.hf_model_dir)
+        # tokenizer is already initialized by the base class
+        # self.tokenizer = AutoTokenizer.from_pretrained(init.hf_model_dir)
         self.model = Qwen2VLForConditionalGeneration.from_pretrained(
-            init.hf_model_dir, torch_dtype="float16", device_map="cpu"
+            init.hf_model_dir, torch_dtype="bfloat16", device_map="cpu"
         )
         self.processor = AutoProcessor.from_pretrained(init.hf_model_dir)
         # move visual model to GPU - will be replaced by trt visual executor
