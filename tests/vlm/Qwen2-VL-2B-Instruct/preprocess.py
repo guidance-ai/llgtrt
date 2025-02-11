@@ -3,6 +3,10 @@ import llgtrt_base
 import torch
 import numpy as np
 import tensorrt_llm
+import subprocess
+
+# make sure qwen_vl_utils is installed
+subprocess.call(["pip", "install", "qwen_vl_utils"])
 
 from transformers import Qwen2VLForConditionalGeneration, AutoTokenizer, AutoProcessor
 from qwen_vl_utils import process_vision_info
@@ -23,9 +27,26 @@ class Plugin(llgtrt_base.PluginBase):
         self.model.visual.to("cuda" if torch.cuda.is_available() else "cpu")
         self.visual_device = self.model.visual.device
 
+        print("Plugin initialized from HF model directory:", init.hf_model_dir)
+
     def process_input(
         self, messages: list[dict], tools: list[dict]
     ) -> llgtrt_base.ProcessInputResult:
+        print("process_input called")
+
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "image": "https://www.wetpawsdoggrooming.com/wp-content/uploads/2019/02/Zoomies.jpeg",
+                    },
+                    {"type": "text", "text": "Describe this image."},
+                ],
+            }
+        ]
+
         text = self.processor.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
@@ -38,6 +59,12 @@ class Plugin(llgtrt_base.PluginBase):
             videos=video_inputs,
             padding=True,
             return_tensors="pt",
+        )
+
+        if "pixel_values" not in inputs:
+            return llgtrt_base.ProcessInputResult(
+            prompt=text,
+            tokens=inputs["input_ids"][0].numpy().tolist()
         )
 
         # calculate visual-features
@@ -68,25 +95,30 @@ class Plugin(llgtrt_base.PluginBase):
         position_ids = None
         cache_position = None
         video_grid_thw = None
-        rope_deltas = self.model.rope_deltas
+        # rope_deltas = self.model.rope_deltas
         attention_mask = inputs["attention_mask"]
-        if position_ids is None and input_ids is not None and (attention_mask is None or attention_mask.ndim == 2):
-            # calculate RoPE index once per generation in the pre-fill stage only
-            if (cache_position is not None and cache_position[0] == 0) or self.model.rope_deltas is None:
-                position_ids, rope_deltas = self.model.get_rope_index(
-                    input_ids, image_grid_thw, video_grid_thw, attention_mask
-                )
-                self.model.rope_deltas = rope_deltas
-            # then use the prev pre-calculated rope-deltas to get the correct position ids
-            else:
-                batch_size, seq_length, _ = text_embeds.shape
-                delta = cache_position[0] + self.model.rope_deltas if cache_position is not None else 0
-                position_ids = torch.arange(seq_length, device=text_embeds.device)
-                position_ids = position_ids.view(1, -1).expand(batch_size, -1)
-                if cache_position is not None:  # otherwise `deltas` is an int `0`
-                    delta = delta.repeat_interleave(batch_size // delta.shape[0], dim=0)
-                position_ids = position_ids.add(delta)
-                position_ids = position_ids.unsqueeze(0).expand(3, -1, -1)
+
+        # if position_ids is None and input_ids is not None and (attention_mask is None or attention_mask.ndim == 2):
+        #     # calculate RoPE index once per generation in the pre-fill stage only
+        #     if (cache_position is not None and cache_position[0] == 0) or self.model.rope_deltas is None:
+        #         position_ids, rope_deltas = self.model.get_rope_index(
+        #             input_ids, image_grid_thw, video_grid_thw, attention_mask
+        #         )
+        #         self.model.rope_deltas = rope_deltas
+        #     # then use the prev pre-calculated rope-deltas to get the correct position ids
+        #     else:
+        #         batch_size, seq_length, _ = text_embeds.shape
+        #         delta = cache_position[0] + self.model.rope_deltas if cache_position is not None else 0
+        #         position_ids = torch.arange(seq_length, device=text_embeds.device)
+        #         position_ids = position_ids.view(1, -1).expand(batch_size, -1)
+        #         if cache_position is not None:  # otherwise `deltas` is an int `0`
+        #             delta = delta.repeat_interleave(batch_size // delta.shape[0], dim=0)
+        #         position_ids = position_ids.add(delta)
+        #         position_ids = position_ids.unsqueeze(0).expand(3, -1, -1)
+
+        position_ids, rope_deltas = self.model.get_rope_index(
+            input_ids, image_grid_thw, video_grid_thw, attention_mask
+        )
 
         mrope_rotary_cos_sin, mrope_position_deltas = self._compute_mrope_args(position_ids, rope_deltas)
 
@@ -103,19 +135,26 @@ class Plugin(llgtrt_base.PluginBase):
                 value += 1
         input_ids = batch_input_ids_list[0].tolist()
         
-        return llgtrt_base.ProcessInputResult(
+        r = llgtrt_base.ProcessInputResult(
             prompt=text,
             tokens=input_ids,
-            prompt_table=image_embeds.to("cpu"),
-            prompt_tasks=[0],
-            mrope_rotary_sin_cos=mrope_rotary_cos_sin[0],
-            mrope_position_deltas=mrope_position_deltas[0][0].to("cpu").item(),
-            skip_cross_attn_blocks=None,
-            encoder_input_features=None,
-            encoder_output_length=None,
-            cross_attention_masks=None,
-            input_position_ids=None
+            # prompt_table=image_embeds.to("cpu") if image_embeds is not None else None,
+            # prompt_tasks=[0] if image_embeds is not None else None,
+            # mrope_rotary_sin_cos=mrope_rotary_cos_sin[0],
+            # mrope_position_deltas=mrope_position_deltas[0][0].to("cpu").item(),
+            # skip_cross_attn_blocks=None,
+            # encoder_input_features=None,
+            # encoder_output_length=None,
+            # cross_attention_masks=None,
+            # input_position_ids=None
         )
+
+        r.prompt_table = image_embeds.to("cpu")
+        r.prompt_tasks = [0]
+        r.mrope_rotary_sin_cos = mrope_rotary_cos_sin[0]
+        r.mrope_position_deltas = mrope_position_deltas[0][0].to("cpu").item()
+
+        return r
 
     def _compute_mrope_args(self, position_ids, rope_deltas):
         mrope_position_ids = position_ids
