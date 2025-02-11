@@ -18,7 +18,7 @@ from llgtrt_native import PluginInit
 class Plugin(llgtrt_base.PluginBase):
     def __init__(self, init: PluginInit):
         super().__init__(init)
-        self.tokenizer = AutoTokenizer.from_pretrained(init.hf_model_dir)        
+        self.tokenizer = AutoTokenizer.from_pretrained(init.hf_model_dir)
         self.model = Qwen2VLForConditionalGeneration.from_pretrained(
             init.hf_model_dir, torch_dtype="float16", device_map="cpu"
         )
