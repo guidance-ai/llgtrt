@@ -41,7 +41,7 @@ class Plugin(llgtrt_base.PluginBase):
                 "content": [
                     {
                         "type": "image",
-                        "image": "https://www.wetpawsdoggrooming.com/wp-content/uploads/2019/02/Zoomies.jpeg",
+                        "image": "https://raw.githubusercontent.com/vis-nlp/ChartQA/main/ChartQA%20Dataset/val/png/multi_col_40963.png",
                     },
                     {"type": "text", "text": "Describe this image."},
                 ],
@@ -150,10 +150,10 @@ class Plugin(llgtrt_base.PluginBase):
             # input_position_ids=None
         )
 
-        r.prompt_table = image_embeds.to("cpu")
-        r.prompt_tasks = [0]
-        r.mrope_rotary_sin_cos = mrope_rotary_cos_sin[0]
-        r.mrope_position_deltas = mrope_position_deltas[0][0].to("cpu").item()
+        r.prompt_table = image_embeds
+        # r.prompt_tasks = [0]
+        r.mrope_rotary_sin_cos = mrope_rotary_cos_sin[0].to("cuda")
+        r.mrope_position_deltas = mrope_position_deltas[0][0].item()
 
         return r
 
