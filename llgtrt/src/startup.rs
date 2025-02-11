@@ -139,12 +139,11 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
     }
 
     if config.py.input_processor.is_none() {
-        let p = std::path::Path::new(&cli_config.engine)
-            .join("input_processor.py")
-            .canonicalize()?;
+        let p = std::path::Path::new(&cli_config.engine).join("input_processor.py");
         if p.exists() {
             log::info!("Using input processor from {:?}", p);
-            config.py.input_processor = Some(p.to_str().unwrap().to_string());
+            config.py.input_processor =
+                Some(p.canonicalize().unwrap().to_str().unwrap().to_string());
         }
     }
 
@@ -237,33 +236,38 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
         lora_cache: LoraCache::new(),
         py_state,
     };
+    let state = Arc::new(state);
 
-    // warmup request
-    log::info!("Warming up executor");
-    let mut warmup_tokens =
-        state.tokenize_with_bos("The ultimate answer to life, the universe and everything is");
-    log::debug!("Warmup tokens: {:?}", warmup_tokens);
-    let (_, mut rx) = AsyncExecutor::lock().add_request(
-        &RequestInit {
-            tokens: warmup_tokens.clone(),
-            params: RequestParams {
-                max_new_tokens: 10,
-                ..Default::default()
+    if state.py_state.enabled {
+        log::info!("Skipping warmup due to python");
+    } else {
+        // warmup request
+        log::info!("Warming up executor");
+        let mut warmup_tokens =
+            state.tokenize_with_bos("The ultimate answer to life, the universe and everything is");
+        log::debug!("Warmup tokens: {:?}", warmup_tokens);
+        let (_, mut rx) = AsyncExecutor::lock().add_request(
+            &RequestInit {
+                tokens: warmup_tokens.clone(),
+                params: RequestParams {
+                    max_new_tokens: 10,
+                    ..Default::default()
+                },
+                client_req_id: ClientReqId::new(1),
+                lora_params: None,
+                is_run: false,
             },
-            client_req_id: ClientReqId::new(1),
-            lora_params: None,
-            is_run: false,
-        },
-        None,
-        vec![],
-    )?;
-    while let Some(r) = rx.recv().await {
-        warmup_tokens.extend_from_slice(&r.response.tokens);
+            None,
+            vec![],
+        )?;
+        while let Some(r) = rx.recv().await {
+            warmup_tokens.extend_from_slice(&r.response.tokens);
+        }
+        log::info!(
+            "Warmup: {}",
+            state.tok_env.tok_trie().tokens_dbg(&warmup_tokens)
+        );
     }
-    log::info!(
-        "Warmup: {}",
-        state.tok_env.tok_trie().tokens_dbg(&warmup_tokens)
-    );
 
     let api_key = cli_config.api_key.clone();
 
@@ -275,7 +279,7 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
         .route("/v1/health/ready", get(routes::ready_check))
         .route("/v1/run", post(routes::route_llguidance))
         .route("/guidance", post(routes::route_llguidance))
-        .with_state(Arc::new(state))
+        .with_state(state)
         .layer(middleware::from_fn(move |req, next| {
             auth_middleware(req, next, api_key.clone())
         }));

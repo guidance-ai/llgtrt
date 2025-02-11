@@ -41,8 +41,10 @@ case "$1" in
             --gemm_plugin bfloat16 \
             --output_dir $ENGINE_DIR \
             --use_paged_context_fmha enable \
-            --max_batch_size 128
-        cp $MODEL_SRC/*.json $ENGINE_DIR
+            --max_batch_size 128 \
+            $TRTLLM_OPTS
+        cp $MODEL_SRC/tokenizer*.json $ENGINE_DIR
+        cp $MODEL_SRC/preprocessor*.json $ENGINE_DIR || true
         if [ $MODEL_TYPE = "llama" ]; then
             cp model_configs/llama31/* $ENGINE_DIR
         fi

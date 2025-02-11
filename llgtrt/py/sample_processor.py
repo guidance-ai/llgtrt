@@ -22,6 +22,6 @@ class Plugin(llgtrt_base.PluginBase):
 
         # testing tensor passing
         r.prompt_table = torch.rand([100, 200], device="cuda", dtype=torch.float32)
-        r.prompt_tasks = [0 for _ in tokens]
+        r.input_token_extra_ids = [0 for _ in tokens]
 
         return r

@@ -148,7 +148,7 @@ extern "C"
     {
         // PromptTuningConfig
         TlcTensor prompt_table;
-        TlcTensor prompt_tasks; // vec<u64>
+        TlcTensor input_token_extra_ids; // vec<u64>
 
         // MropeConfig
         TlcTensor mrope_rotary_sin_cos;

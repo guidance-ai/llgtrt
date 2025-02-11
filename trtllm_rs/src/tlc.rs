@@ -53,7 +53,7 @@ impl Default for ffi::TlcPromptParams {
     fn default() -> Self {
         ffi::TlcPromptParams {
             prompt_table: TlcTensor::default(),
-            prompt_tasks: TlcTensor::default(),
+            input_token_extra_ids: TlcTensor::default(),
             mrope_rotary_sin_cos: TlcTensor::default(),
             mrope_position_deltas: 0,
             skip_cross_attn_blocks: TlcTensor::default(),
