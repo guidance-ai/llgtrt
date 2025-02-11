@@ -260,11 +260,11 @@ TlcStatus tlc_enqueue_request(TlcExecutor* ctx, TlcRequest const* request, TlcRe
         if (!tlc_tensor_is_none(pp.prompt_table))
         {
             std::optional<std::vector<tle::IdType>> inputTokenExtraIds = std::nullopt;
-            if (!tlc_tensor_is_none(pp.prompt_tasks))
+            if (!tlc_tensor_is_none(pp.input_token_extra_ids))
             {
-                check_dtype(pp.prompt_tasks, TLC_DT_I64, "prompt_tasks");
-                auto ptr = (tle::IdType*) pp.prompt_tasks.data_ptr;
-                auto len = tlc_shape_volume(pp.prompt_tasks.shape);
+                check_dtype(pp.input_token_extra_ids, TLC_DT_I64, "input_token_extra_ids");
+                auto ptr = (tle::IdType*) pp.input_token_extra_ids.data_ptr;
+                auto len = tlc_shape_volume(pp.input_token_extra_ids.shape);
                 inputTokenExtraIds = std::vector(ptr, ptr + len);
             }
             auto ptune = tle::PromptTuningConfig(_tlc_to_tle_tensor_no_copy(pp.prompt_table), inputTokenExtraIds);

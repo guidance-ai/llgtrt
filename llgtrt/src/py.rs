@@ -107,7 +107,7 @@ impl PyState {
             let mut pp = TlcPromptParams::default();
 
             pp.prompt_table = self.get_tensor(&r2, "prompt_table")?;
-            pp.prompt_tasks = self.get_tensor(&r2, "prompt_tasks")?;
+            pp.input_token_extra_ids = self.get_tensor(&r2, "input_token_extra_ids")?;
             pp.mrope_rotary_sin_cos = self.get_tensor(&r2, "mrope_rotary_sin_cos")?;
             pp.mrope_position_deltas =
                 self.get_i32(&r2, "mrope_position_deltas", pp.mrope_position_deltas)?;

@@ -6,7 +6,7 @@ import tensorrt_llm
 import subprocess
 
 # make sure qwen_vl_utils is installed
-subprocess.call(["pip", "install", "qwen_vl_utils"])
+# subprocess.call(["pip", "install", "qwen_vl_utils"])
 
 from transformers import Qwen2VLForConditionalGeneration, AutoTokenizer, AutoProcessor
 from qwen_vl_utils import process_vision_info

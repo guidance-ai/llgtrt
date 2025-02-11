@@ -45,7 +45,7 @@ class ProcessInputResult:
 
         # PromptTuningConfig: embedding_table and input_token_extra_ids
         self.prompt_table: torch.Tensor | None = None
-        self.prompt_tasks: list[int] | None = None
+        self.input_token_extra_ids: list[int] | None = None
 
         # MropeConfig
         self.mrope_rotary_sin_cos: torch.Tensor | None = None
@@ -85,8 +85,8 @@ class PluginBase:
         r = self.process_input(messages=ch["messages"], tools=ch["tools"])
         assert isinstance(r, ProcessInputResult)
 
-        if r.prompt_tasks is not None:
-            r.prompt_tasks = wrap_buffer(r.prompt_tasks, torch.int64)
+        if r.input_token_extra_ids is not None:
+            r.input_token_extra_ids = wrap_buffer(r.input_token_extra_ids, torch.int64)
         if r.input_position_ids is not None:
             r.input_position_ids = wrap_buffer(r.input_position_ids, torch.int64)
 
@@ -102,7 +102,9 @@ class PluginBase:
             # make sure we synchronize torch before returning
             torch.cuda.current_stream().synchronize()
 
-        return r.__dict__.copy()
+        rr = r.__dict__.copy()
+        # print(rr)
+        return rr
 
     def process_input(
         self, messages: list[dict], tools: list[dict]
