@@ -33,20 +33,15 @@ class Plugin(llgtrt_base.PluginBase):
     def process_input(
         self, messages: list[dict], tools: list[dict]
     ) -> llgtrt_base.ProcessInputResult:
-        print("process_input called")
+        print("process_input called, ", messages)
 
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image",
-                        "image": "https://raw.githubusercontent.com/vis-nlp/ChartQA/main/ChartQA%20Dataset/val/png/multi_col_40963.png",
-                    },
-                    {"type": "text", "text": "Describe this image."},
-                ],
-            }
-        ]
+        # qwen utils can't handle OpenAI format messages
+        for m in messages:
+            c = m.get("content", None)
+            if isinstance(c, list):
+                for part in c:
+                    if part["type"] == "image_url":
+                        part["image_url"] = part["image_url"]["url"]
 
         text = self.processor.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True

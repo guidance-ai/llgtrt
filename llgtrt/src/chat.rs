@@ -1,9 +1,11 @@
 use crate::{
     jsonutil,
-    routes::openai::{ChatCompletionMessageContentPart, ChatCompletionMessageParams, Tool},
+    routes::openai::{
+        ChatCompletionMessageContentPart, ChatCompletionMessageParams, ContentPart, Tool,
+    },
     tokenizer::TokenizerConfig,
 };
-use anyhow::anyhow;
+use anyhow::{anyhow, Result};
 use minijinja::{value::Kwargs, Environment, Error, ErrorKind, Value};
 use serde::{Deserialize, Serialize};
 
@@ -126,7 +128,11 @@ impl ChatBuilder {
 
     pub fn build(&self, params: ChatParams) -> anyhow::Result<String> {
         let mut context = self.default_context.clone();
-        context.messages = params.messages.iter().map(|x| x.flatten()).collect();
+        context.messages = params
+            .messages
+            .iter()
+            .map(|x| x.flatten())
+            .collect::<Result<Vec<_>>>()?;
         context.date_string = date_string();
         if params.tools.len() > 0 {
             context.tools = Some(params.tools.clone());
@@ -147,20 +153,29 @@ impl ChatBuilder {
     }
 }
 
+impl ContentPart {
+    pub fn text(&self) -> Option<String> {
+        match self {
+            ContentPart::Text { text: s } => Some(s.clone()),
+            ContentPart::ImageUrl { .. } => None,
+        }
+    }
+}
+
 impl ChatCompletionMessageContentPart {
-    pub fn flatten(&self) -> ChatCompletionMessageContentPart {
+    pub fn flatten(&self) -> Result<ChatCompletionMessageContentPart> {
         match self {
             ChatCompletionMessageContentPart::Text(s) => {
-                ChatCompletionMessageContentPart::Text(s.clone())
+                Ok(ChatCompletionMessageContentPart::Text(s.clone()))
             }
             ChatCompletionMessageContentPart::ContentParts(parts) => {
-                ChatCompletionMessageContentPart::Text(
+                Ok(ChatCompletionMessageContentPart::Text(
                     parts
                         .iter()
-                        .map(|x| x.text.clone())
-                        .collect::<Vec<_>>()
+                        .map(|x| x.text().ok_or_else(|| anyhow!("unexpected ImageUrl")))
+                        .collect::<Result<Vec<_>>>()?
                         .join("\n"),
-                )
+                ))
             }
         }
     }
@@ -168,17 +183,17 @@ impl ChatCompletionMessageContentPart {
 
 impl ChatCompletionMessageParams {
     // HF templates generally don't support multiple content parts, so we flatten them here
-    pub fn flatten(&self) -> Self {
-        match self {
+    pub fn flatten(&self) -> Result<Self> {
+        Ok(match self {
             ChatCompletionMessageParams::User { content, name } => {
                 ChatCompletionMessageParams::User {
-                    content: content.flatten(),
+                    content: content.flatten()?,
                     name: name.clone(),
                 }
             }
             ChatCompletionMessageParams::System { content, name } => {
                 ChatCompletionMessageParams::System {
-                    content: content.flatten(),
+                    content: content.flatten()?,
                     name: name.clone(),
                 }
             }
@@ -187,7 +202,7 @@ impl ChatCompletionMessageParams {
                 name,
                 tool_calls,
             } => ChatCompletionMessageParams::Assistant {
-                content: content.as_ref().map(|x| x.flatten()),
+                content: content.as_ref().map(|x| x.flatten()).transpose()?,
                 name: name.clone(),
                 tool_calls: tool_calls.clone(),
             },
@@ -195,10 +210,10 @@ impl ChatCompletionMessageParams {
                 content,
                 tool_call_id,
             } => ChatCompletionMessageParams::Tool {
-                content: content.as_ref().map(|x| x.flatten()),
+                content: content.as_ref().map(|x| x.flatten()).transpose()?,
                 tool_call_id: tool_call_id.clone(),
             },
-        }
+        })
     }
 }
 

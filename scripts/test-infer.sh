@@ -51,6 +51,32 @@ curl -X POST "${TRT_API_BASE}chat/completions" \
 }' | jq
 ;;
 
+  vlm)
+curl -X POST "${TRT_API_BASE}chat/completions" \
+-H "Content-Type: application/json" \
+-d '{
+  "model": "model",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a helpful assistant."
+    },
+    {
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "Describe this image."},
+            {
+                "type": "image_url",
+                "image_url": {"url": "https://lanytek.com/images/demo_lower.png"}
+            }
+        ]
+    }
+  ],
+  "max_tokens": 100,
+  "temperature": 0.8
+}' | jq
+;;
+
   chat_min_tokens)
 curl -X POST "${TRT_API_BASE}chat/completions" \
 -H "Content-Type: application/json" \

@@ -643,7 +643,13 @@ pub async fn route_chat_completions(
     };
 
     let req_input = if app_state.py_state.enabled {
-        app_state.py_state.run_input_processor(chat_params)?
+        app_state
+            .py_state
+            .run_input_processor(chat_params)
+            .map_err(|e| {
+                log::warn!("chat py error: {}", e);
+                e
+            })?
     } else {
         let text = app_state.chat_builder.build(chat_params)?;
         RequestInput::from_text(&app_state, &text)
