@@ -15,7 +15,7 @@ def _wrap(t: torch.Tensor) -> WrappedTensor:
 
 def wrap_tensor(t: torch.Tensor) -> WrappedTensor:
     assert t.is_contiguous()
-    assert t.device.type == "cuda"
+    # assert t.device.type == "cuda"
     return _wrap(t)
 
 

@@ -152,7 +152,7 @@ class Plugin(llgtrt_base.PluginBase):
 
         r.prompt_table = image_embeds
         # r.prompt_tasks = [0]
-        r.mrope_rotary_sin_cos = mrope_rotary_cos_sin[0].to("cuda")
+        r.mrope_rotary_sin_cos = mrope_rotary_cos_sin[0].to("cpu")
         r.mrope_position_deltas = mrope_position_deltas[0][0].item()
 
         return r
