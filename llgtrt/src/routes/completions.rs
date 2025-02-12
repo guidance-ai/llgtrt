@@ -576,7 +576,12 @@ pub async fn route_completions(
 
     let req_input = RequestInput::from_text(&app_state, &request.prompt[0]);
 
-    mk_req_info(&app_state, req_input, &request.params, false, false).await
+    mk_req_info(&app_state, req_input, &request.params, false, false)
+        .await
+        .map_err(|e| {
+            log::warn!("completion error: {}", e);
+            e
+        })
 }
 
 pub async fn route_chat_completions(
@@ -644,7 +649,12 @@ pub async fn route_chat_completions(
         RequestInput::from_text(&app_state, &text)
     };
 
-    mk_req_info(&app_state, req_input, &request.params, true, false).await
+    mk_req_info(&app_state, req_input, &request.params, true, false)
+        .await
+        .map_err(|e| {
+            log::warn!("chat error: {}", e);
+            e
+        })
 }
 
 fn json_to_llg(schema: Value) -> Result<TopLevelGrammar> {
@@ -1097,7 +1107,12 @@ pub async fn route_llguidance(
     };
     let req_input = RequestInput::from_text(&app_state, &chat_history);
 
-    mk_req_info(&app_state, req_input, &common, is_chat, true).await
+    mk_req_info(&app_state, req_input, &common, is_chat, true)
+        .await
+        .map_err(|e| {
+            log::warn!("llg error: {}", e);
+            e
+        })
 }
 
 fn safetensors_dtype_to_tlc(dtype: Dtype) -> TlcDataType {
