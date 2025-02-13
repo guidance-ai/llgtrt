@@ -30,8 +30,13 @@ fn main() {
         .replace(
             "#[derive(Debug, Clone)]\npub struct TlcEngineParams {",
             "#[derive(Debug, Clone, Serialize, Deserialize)]\npub struct TlcEngineParams {",
+        )
+        .replace(
+            "#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]",
+            "#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq, FromRepr)]",
         );
     let bindings = format!("use serde::{{Deserialize, Serialize}};\n{}", bindings);
+    let bindings = format!("use strum::FromRepr;\n{}", bindings);
 
     let out_path = PathBuf::from(env::var("OUT_DIR").unwrap());
     // Write the bindings to $OUT_DIR/bindings.rs

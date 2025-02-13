@@ -137,7 +137,8 @@ impl PyState {
     fn get_tensor<'py>(&self, dict: &Bound<'py, PyDict>, field: &str) -> PyResult<TlcTensor> {
         let t: Option<(PyObject, u32, usize, Vec<i64>)> = self.get_field(dict, field)?.extract()?;
         if let Some((_, dtype, addr, shape)) = t {
-            let dtype = TlcDataType::try_from(dtype).map_err(rt_error)?;
+            let dtype = TlcDataType::from_repr(dtype)
+                .ok_or_else(|| PyRuntimeError::new_err("Unknown tensor data type"))?;
             // some sanity checks
             if addr == 0 {
                 return Err(PyRuntimeError::new_err("NULL tensor address"));

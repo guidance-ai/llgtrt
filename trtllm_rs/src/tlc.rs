@@ -474,33 +474,3 @@ fn map_err<T>(err: *const i8, t: T, msg: &str) -> Result<T> {
         Ok(t)
     }
 }
-
-impl TryFrom<u32> for TlcDataType {
-    type Error = &'static str;
-
-    fn try_from(value: u32) -> Result<Self, Self::Error> {
-        if value == TlcDataType::TLC_DT_F32 as u32 {
-            Ok(TlcDataType::TLC_DT_F32)
-        } else if value == TlcDataType::TLC_DT_F16 as u32 {
-            Ok(TlcDataType::TLC_DT_F16)
-        } else if value == TlcDataType::TLC_DT_I8 as u32 {
-            Ok(TlcDataType::TLC_DT_I8)
-        } else if value == TlcDataType::TLC_DT_I32 as u32 {
-            Ok(TlcDataType::TLC_DT_I32)
-        } else if value == TlcDataType::TLC_DT_BOOL as u32 {
-            Ok(TlcDataType::TLC_DT_BOOL)
-        } else if value == TlcDataType::TLC_DT_U8 as u32 {
-            Ok(TlcDataType::TLC_DT_U8)
-        } else if value == TlcDataType::TLC_DT_F8 as u32 {
-            Ok(TlcDataType::TLC_DT_F8)
-        } else if value == TlcDataType::TLC_DT_BF16 as u32 {
-            Ok(TlcDataType::TLC_DT_BF16)
-        } else if value == TlcDataType::TLC_DT_I64 as u32 {
-            Ok(TlcDataType::TLC_DT_I64)
-        } else if value == TlcDataType::TLC_DT_I4 as u32 {
-            Ok(TlcDataType::TLC_DT_I4)
-        } else {
-            Err("Invalid TlcDataType")
-        }
-    }
-}
