@@ -72,6 +72,23 @@ curl -X POST "${TRT_API_BASE}chat/completions" \
         ]
     }
   ],
+  "response_format": {
+    "type": "json_schema",
+    "json_schema": {
+      "strict": true,
+      "schema": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string",
+            "maxLength": 200
+          }
+        },
+        "additionalProperties": false,
+        "required": ["description"]
+      }
+    }
+  },
   "max_tokens": 100,
   "temperature": 0.8
 }' | jq
