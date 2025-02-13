@@ -55,6 +55,7 @@ impl Default for RequestParams {
             num_return_sequences: 1,
             temperature: f32::NAN,
             top_p: 1.0,
+            min_p: 0.0,
             presence_penalty: 0.0,
             frequency_penalty: 0.0,
             top_k: 0,

@@ -23,6 +23,8 @@ extern "C"
         uint32_t _num_tokens;
         // set by the callback (initially 1.0)
         float temperature;
+        // set by the callback (initially -FLT_MAX)
+        float ln_min_p;
         // set by the callback (initially NULL)
         uint32_t* out_mask_pointer;
     } TlcLogitsEntry;
@@ -116,6 +118,7 @@ extern "C"
         uint32_t eos_token_id;
         float temperature;
         float top_p;
+        float min_p;
         float frequency_penalty;
         float presence_penalty;
         float priority;
