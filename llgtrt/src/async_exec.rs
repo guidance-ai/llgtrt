@@ -317,7 +317,7 @@ impl AsyncExecutor {
     pub fn set_global(executor: AsyncExecutor) {
         unsafe {
             if GLOBAL_EXECUTOR.is_null() {
-                let mask_allocator = MaskAllocator::new(executor.n_vocab, executor.max_batch_size);
+                let mask_allocator = MaskAllocator::new(executor.n_vocab, executor.max_batch_size + 1);
                 GLOBAL_ALLOCATOR = Box::leak(Box::new(mask_allocator));
                 GLOBAL_EXECUTOR = Box::leak(Box::new(Mutex::new(executor)));
             } else {

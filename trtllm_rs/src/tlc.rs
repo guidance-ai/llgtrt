@@ -200,7 +200,7 @@ impl MaskAllocator {
             self.mask_stride as u32,
             std::sync::atomic::Ordering::Relaxed,
         );
-        assert!((offset + self.mask_stride as u32) < self.num_bytes as u32);
+        assert!((offset + self.mask_stride as u32) <= self.num_bytes as u32);
         unsafe {
             let ptr = self.base_ptr.add(offset as usize);
             std::slice::from_raw_parts_mut(ptr as *mut u32, self.mask_stride / 4)
