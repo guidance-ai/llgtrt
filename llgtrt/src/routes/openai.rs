@@ -262,10 +262,15 @@ fn default_min_tokens() -> usize {
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct ContentPart {
-    #[serde(rename = "type")]
-    pub kind: String,
-    pub text: String,
+pub struct ImageUrl {
+    pub url: String,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ContentPart {
+    Text { text: String },
+    ImageUrl { image_url: ImageUrl },
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]

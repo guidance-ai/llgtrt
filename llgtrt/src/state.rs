@@ -1,4 +1,4 @@
-use crate::chat::ChatBuilder;
+use crate::{chat::ChatBuilder, py::PyState};
 use crate::lora::LoraCache;
 use llguidance::ParserFactory;
 use toktrie::{TokEnv, TokenId};
@@ -15,6 +15,7 @@ pub struct AppState {
     pub parser_factory: ParserFactory,
     pub lora_root: Option<String>,
     pub lora_cache: LoraCache,
+    pub py_state: PyState,
 }
 
 impl AppState {

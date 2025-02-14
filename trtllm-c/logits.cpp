@@ -83,7 +83,7 @@ static std::string shapeToString(tle::Shape const& shape)
     if (!(x))                                                                                                          \
     {                                                                                                                  \
         TLLM_LOG_ERROR("CHECK failed: %s", #x);                                                                        \
-        return;                                                                                                        \
+        abort();                                                                                                       \
     }
 
 static void logitsPostProcessorFn(std::vector<tle::IdType> const& reqIds, std::vector<tle::Tensor>& logits,
@@ -162,7 +162,13 @@ static void logitsPostProcessorFn(std::vector<tle::IdType> const& reqIds, std::v
         if (nVocab == 0)
         {
             nVocab = shape[2];
-            CHECK((nVocab + 31) / 32 * 4 <= mask_stride);
+
+            if ((nVocab + 31) / 32 * 4 > mask_stride)
+            {
+                TLLM_LOG_ERROR("nVocab=%d; mask_stride allows for only %d", nVocab, mask_stride * 8);
+                TLLM_LOG_INFO("try adding { ... tokenizer: { n_vocab_override: %d } ... } to llgtrt.json5", nVocab);
+                abort();
+            }
         }
         else
         {
