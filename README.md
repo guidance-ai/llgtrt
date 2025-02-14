@@ -48,6 +48,17 @@ To build a container, use:
 
 The build script will initialize submodules if they are missing. It takes about 15 minutes on a GitHub runner and should typically be faster on a local machine.
 
+#### Optional: Building TensorRT-LLM from source
+
+The build process above uses prebuilt binaries from a release version of TensorRT-LLM.  It is also possible to build your own version of TensorRT-LLM from source and create a build of llgtrt based on that.  This can be used to build a version of llgtrt that will work with versions of TensorRT-LLM newer than the released versions in nVidia's repositories.
+
+To do so, first build TensorRT-LLM from source following the instructions in https://nvidia.github.io/TensorRT-LLM/installation/build-from-source-linux.html
+
+Now, build llgtrt based on the Docker image you built above
+```bash
+./docker/build.sh --trtllm tensorrt_llm/release
+```
+
 ### Building the TensorRT-LLM Engine
 
 This is based on the [TensorRT-LLM Quick-start](https://nvidia.github.io/TensorRT-LLM/quick-start-guide.html).
