@@ -211,6 +211,22 @@ curl -v -X POST "${TRT_API_BASE}chat/completions" \
 }' | jq
 ;;
 
+  think)
+  # chat format already has initial <think>\n
+curl -v -X POST "${TRT_API_BASE}chat/completions" \
+-H "Content-Type: application/json" \
+-d '{ "model": "model", "messages": [
+    { "role": "user",
+      "content": "How many Rs in strawberry?"
+    } ],
+  "response_format": {
+    "type": "lark_grammar",
+    "lark_grammar": "start: /(.|\\n)*/ </think> /\\d+/"
+  },
+  "max_tokens": 1000
+}' | jq
+;;
+
 esac
 
 echo

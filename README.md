@@ -41,6 +41,23 @@ For example, you can `POST` to `/v1/chat/completions`:
 
 This results in a (bad) joke in uppercase.
 
+Another example involves reasoning models distilled from Deepseek-R1
+(the chat format in these models seems to already include `<think>\n`,
+so it should not be part of the grammar):
+
+```json
+{ "model": "model", "messages": [
+    { "role": "user",
+      "content": "How many Rs in strawberry?"
+    } ],
+  "response_format": {
+    "type": "lark_grammar",
+    "lark_grammar": "start: /(.|\\n)*/ </think> /\\d+/"
+  },
+  "max_tokens": 1000
+}
+```
+
 You can [convert GBNF](https://github.com/guidance-ai/llguidance/blob/main/python/llguidance/gbnf_to_lark.py) grammars to Lark syntax, as it's strictly more expressive.
 Learn more in [llguidance docs](https://github.com/guidance-ai/llguidance/blob/main/docs/syntax.md).
 
