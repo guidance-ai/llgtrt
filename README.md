@@ -48,15 +48,20 @@ so it should not be part of the grammar):
 ```json
 { "model": "model", "messages": [
     { "role": "user",
-      "content": "How many Rs in strawberry?"
+      "content": "How many 'r' in strawberry?"
     } ],
   "response_format": {
     "type": "lark_grammar",
-    "lark_grammar": "start: /(.|\\n)*/ </think> /\\d+/"
+    "lark_grammar": "start: /(.|\\n){1000,2000}/ </think> \"\\\\boxed{\" /[0-9]+/ \"}\""
   },
   "max_tokens": 1000
 }
 ```
+
+The `"lark_grammar"` is JSON-encoded version of 
+`start: /(.|\n){1000,2000}/ </think> "\\boxed{" /[0-9]+/ "}"`.
+Of course you can also use `{0,2000}` to only place upper bound on thinking,
+`{1000,}` to place lower bound, or `*` to avoid any bounds.
 
 You can [convert GBNF](https://github.com/guidance-ai/llguidance/blob/main/python/llguidance/gbnf_to_lark.py) grammars to Lark syntax, as it's strictly more expressive.
 Learn more in [llguidance docs](https://github.com/guidance-ai/llguidance/blob/main/docs/syntax.md).

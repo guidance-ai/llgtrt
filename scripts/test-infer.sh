@@ -217,11 +217,11 @@ curl -v -X POST "${TRT_API_BASE}chat/completions" \
 -H "Content-Type: application/json" \
 -d '{ "model": "model", "messages": [
     { "role": "user",
-      "content": "How many Rs in strawberry?"
+      "content": "How many 'r' in strawberry?"
     } ],
   "response_format": {
     "type": "lark_grammar",
-    "lark_grammar": "start: /(.|\\n)*/ </think> /\\d+/"
+    "lark_grammar": "start: /(.|\\n){1000,2000}/ </think> \"\\\\boxed{\" /[0-9]+/ \"}\""
   },
   "max_tokens": 1000
 }' | jq
