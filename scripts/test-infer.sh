@@ -196,6 +196,21 @@ curl -X POST "${TRT_API_BASE}chat/completions" \
 -H "Content-Type: application/json" -v -d @"$1" | jq
 ;;
 
+  lark)
+curl -v -X POST "${TRT_API_BASE}chat/completions" \
+-H "Content-Type: application/json" \
+-d '{ "model": "model", "messages": [
+    { "role": "user",
+      "content": "Please tell me a one line joke."
+    } ],
+  "response_format": {
+    "type": "lark_grammar",
+    "lark_grammar": "start: /[A-Z ]+/"
+  },
+  "max_tokens": 100
+}' | jq
+;;
+
 esac
 
 echo

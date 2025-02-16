@@ -17,6 +17,34 @@ There is no significant startup cost for all realistic sizes of grammars (no mea
 
 This approach differs from [Outlines](https://github.com/dottxt-ai/outlines) and [XGrammar](https://github.com/mlc-ai/xgrammar) (which both pre-compute masks, resulting in a startup cost and limits on schema complexity) and is more similar in spirit to [llama.cpp grammars](https://github.com/ggerganov/llama.cpp/blob/master/grammars/README.md), though it is much faster due to the use of a custom lexer with [derivative-based regexes](https://github.com/microsoft/derivre), an Earley parser, and a [highly optimized](https://github.com/guidance-ai/llguidance/blob/main/docs/optimizations.md) token prefix tree.
 
+### Lark grammars
+
+Llgtrt follows OpenAI API when `response_format` is set to `json_object` or `json_schema` 
+(including handling of `strict` field in the schema).
+
+For more flexible constraints, `response_format` can be set to `lark_grammar`.
+For example, you can `POST` to `/v1/chat/completions`:
+
+```json
+{ "model": "model", 
+  "messages": [
+    { "role": "user",
+      "content": "Please tell me a one line joke."
+    } ],
+  "response_format": {
+    "type": "lark_grammar",
+    "lark_grammar": "start: /[A-Z ]+/"
+  },
+  "max_tokens": 100
+}
+```
+
+This results in a (bad) joke in uppercase.
+
+You can [convert GBNF](https://github.com/guidance-ai/llguidance/blob/main/python/llguidance/gbnf_to_lark.py) grammars to Lark syntax, as it's strictly more expressive.
+Learn more in [llguidance docs](https://github.com/guidance-ai/llguidance/blob/main/docs/syntax.md).
+
+
 ## Requirements
 
 You will need a Linux machine with an NVIDIA GPU and Docker set up to use the `nvidia-docker` runtime.
