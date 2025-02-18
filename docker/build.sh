@@ -38,12 +38,14 @@ fi
 
 if $DEV_MODE; then
     TARGET="--target llgtrt_dev"
+    TAG=
 else
     TARGET="--target llgtrt_prod"
+    TAG="-t llgtrt/llgtrt:latest"
 fi
 
 # Build the Docker image with the appropriate arguments
-DOCKER_BUILD_ARGS="--progress=plain --build-arg BASE_IMAGE=$BASE_IMAGE --build-arg INSTALL_TRTLLM=$INSTALL_TRTLLM --build-arg USE_CXX11_ABI=$USE_CXX11_ABI $TARGET"
+DOCKER_BUILD_ARGS="--progress=plain --build-arg BASE_IMAGE=$BASE_IMAGE --build-arg INSTALL_TRTLLM=$INSTALL_TRTLLM --build-arg USE_CXX11_ABI=$USE_CXX11_ABI $TAG $TARGET"
 
 echo "Building Docker image $TARGET with arguments: $DOCKER_BUILD_ARGS"
 docker build $DOCKER_BUILD_ARGS . -f docker/Dockerfile
