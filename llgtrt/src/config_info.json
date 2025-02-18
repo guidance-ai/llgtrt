@@ -26,6 +26,18 @@
   "kv_cache_host_memory_megabytes": {
    "#": "Host memory to use for KV cache"
   },
+  "kv_cache_onboard_blocks": {
+   "#": "Controls whether offloaded blocks should be onboarded back into primary memory before being reused.\nDefaults to true."
+  },
+  "cross_kv_cache_fraction": {
+   "#": "The fraction of the KV Cache memory should be reserved for cross attention\nIf set to p, self attention will use 1-p of KV Cache memory and cross attention\nwill use p of KV Cache memory.\nShould only be set when using encoder-decoder model."
+  },
+  "secondary_offload_min_priority": {
+   "#": "Only blocks with priority > mSecondaryOfflineMinPriority can be offloaded to secondary memory."
+  },
+  "event_buffer_max_size": {
+   "#": "Max size of the KV cache event buffer"
+  },
   "enable_batch_size_tuning": {
    "#": "Control automatic tuning of batch size\nDefaults to true (unlike trtllm)"
   },

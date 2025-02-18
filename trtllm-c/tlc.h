@@ -84,6 +84,14 @@ extern "C"
         size_t kv_cache_host_memory_bytes;
         // defaults to true
         bool kv_cache_onboard_blocks;
+
+        // defaults to none (which is 0.5)
+        float cross_kv_cache_fraction;
+        // defaults to none
+        int32_t secondary_offload_min_priority;
+        // defaults to 0
+        size_t event_buffer_max_size;
+
         // defaults to 0 (disabled)
         int32_t max_attention_window_size;
         // when set to 0, use default

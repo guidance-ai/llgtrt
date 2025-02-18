@@ -172,6 +172,16 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
         };
     }
 
+    macro_rules! set_field_opt {
+        ($fld:ident) => {
+            if let Some(v) = runtime_config.$fld {
+                p.$fld = v
+                    .try_into()
+                    .expect(concat!("Invalid value for ", stringify!($fld)));
+            }
+        };
+    }
+
     set_field!(enable_chunked_context);
     set_field!(enable_kv_cache_reuse);
     set_field!(enable_batch_size_tuning);
@@ -181,6 +191,9 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
     set_field!(max_queue_size);
     set_field!(guaranteed_no_evict);
     set_field!(kv_cache_free_gpu_mem_fraction);
+    set_field_opt!(cross_kv_cache_fraction);
+    set_field_opt!(secondary_offload_min_priority);
+    set_field_opt!(event_buffer_max_size);
     p.kv_cache_host_memory_bytes = runtime_config.kv_cache_host_memory_megabytes * 1024 * 1024;
 
     log::info!("Initializing executor with config: {:?}", exec_config);

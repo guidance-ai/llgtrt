@@ -56,6 +56,9 @@ void tlc_default_init_params(TlcInitParams* params)
     e->gpu_weights_percent = 1.0;
     e->kv_cache_free_gpu_mem_fraction = 0.9;
     e->kv_cache_onboard_blocks = true;
+    e->cross_kv_cache_fraction = NAN;
+    e->secondary_offload_min_priority = INT32_MIN;
+    e->event_buffer_max_size = 0;
 }
 
 void _tlc_set_logits_post_processor(TlcInitParams const* params, tle::ExecutorConfig* config);
@@ -64,6 +67,11 @@ template <typename T>
 static std::optional<T> positive_opt(T value)
 {
     return value > 0 ? std::optional<T>(value) : std::nullopt;
+}
+
+static std::optional<float> nan_opt(float value)
+{
+    return std::isnan(value) ? std::nullopt : std::optional<float>(value);
 }
 
 TlcStatus tlc_init(TlcInitParams const* params, TlcExecutor** res)
@@ -93,7 +101,11 @@ TlcStatus tlc_init(TlcInitParams const* params, TlcExecutor** res)
             ep->kv_cache_free_gpu_mem_fraction > 0 && ep->max_tokens_in_paged_kv_cache <= 0
                 ? std::optional<float>(ep->kv_cache_free_gpu_mem_fraction)
                 : std::nullopt,
-            ep->kv_cache_host_memory_bytes, ep->kv_cache_onboard_blocks);
+            ep->kv_cache_host_memory_bytes, ep->kv_cache_onboard_blocks, nan_opt(ep->cross_kv_cache_fraction),
+            ep->secondary_offload_min_priority == INT32_MIN
+                ? std::nullopt
+                : std::optional<int32_t>(ep->secondary_offload_min_priority),
+            ep->event_buffer_max_size);
 
         tle::DynamicBatchConfig dynamicBatchConfig(ep->enable_batch_size_tuning, ep->enable_max_num_tokens_tuning);
 

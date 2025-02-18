@@ -40,6 +40,22 @@ pub struct TrtLlmRuntimeConfig {
     /// Host memory to use for KV cache
     pub kv_cache_host_memory_megabytes: usize,
 
+    /// Controls whether offloaded blocks should be onboarded back into primary memory before being reused.
+    /// Defaults to true.
+    pub kv_cache_onboard_blocks: bool,
+
+    /// The fraction of the KV Cache memory should be reserved for cross attention
+    /// If set to p, self attention will use 1-p of KV Cache memory and cross attention
+    /// will use p of KV Cache memory.
+    /// Should only be set when using encoder-decoder model.
+    pub cross_kv_cache_fraction: Option<f32>,
+
+    /// Only blocks with priority > mSecondaryOfflineMinPriority can be offloaded to secondary memory.
+    pub secondary_offload_min_priority: Option<i32>,
+
+    /// Max size of the KV cache event buffer
+    pub event_buffer_max_size: Option<usize>,
+
     /// Control automatic tuning of batch size
     /// Defaults to true (unlike trtllm)
     pub enable_batch_size_tuning: bool,
@@ -62,6 +78,10 @@ impl Default for TrtLlmRuntimeConfig {
             kv_cache_host_memory_megabytes: 0,
             enable_batch_size_tuning: true,
             enable_max_num_tokens_tuning: true,
+            kv_cache_onboard_blocks: true,
+            cross_kv_cache_fraction: None,
+            secondary_offload_min_priority: None,
+            event_buffer_max_size: None,
         }
     }
 }
