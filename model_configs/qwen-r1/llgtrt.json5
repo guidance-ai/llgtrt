@@ -1,0 +1,5 @@
+{
+  tokenizer: {
+    n_vocab_override: 152064,
+  },
+}
