@@ -38,7 +38,7 @@ fi
 
 if $DEV_MODE; then
     TARGET="--target llgtrt_dev"
-    TAG=
+    TAG="-t llgtrt/llgtrt:dev"
 else
     TARGET="--target llgtrt_prod"
     TAG="-t llgtrt/llgtrt:latest"
