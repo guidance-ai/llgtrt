@@ -36,16 +36,16 @@ if [[ -z "$BASE_IMAGE" ]]; then
     BASE_IMAGE="nvcr.io/nvidia/tensorrt:24.12-py3"
 fi
 
+DOCKER_BUILD_ARGS="--progress=plain --build-arg BASE_IMAGE=$BASE_IMAGE --build-arg INSTALL_TRTLLM=$INSTALL_TRTLLM --build-arg USE_CXX11_ABI=$USE_CXX11_ABI"
+
+function run_docker_build {
+    echo "Building Docker image with arguments: $DOCKER_BUILD_ARGS $@"
+    docker build $DOCKER_BUILD_ARGS "$@" -f docker/Dockerfile .
+}
+
+run_docker_build --target llgtrt_dev -t llgtrt/llgtrt:dev
 if $DEV_MODE; then
-    TARGET="--target llgtrt_dev"
-    TAG="-t llgtrt/llgtrt:dev"
+    echo "Skip production build in dev mode"
 else
-    TARGET="--target llgtrt_prod"
-    TAG="-t llgtrt/llgtrt:latest"
+    run_docker_build --target llgtrt_prod -t llgtrt/llgtrt:latest
 fi
-
-# Build the Docker image with the appropriate arguments
-DOCKER_BUILD_ARGS="--progress=plain --build-arg BASE_IMAGE=$BASE_IMAGE --build-arg INSTALL_TRTLLM=$INSTALL_TRTLLM --build-arg USE_CXX11_ABI=$USE_CXX11_ABI $TAG $TARGET"
-
-echo "Building Docker image $TARGET with arguments: $DOCKER_BUILD_ARGS"
-docker build $DOCKER_BUILD_ARGS . -f docker/Dockerfile

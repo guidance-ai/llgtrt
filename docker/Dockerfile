@@ -7,7 +7,7 @@ ARG INSTALL_TRTLLM=true
 # Set this to 1 to enable the CXX11_ABI during native builds
 ARG USE_CXX11_ABI=0
 
-FROM ${BASE_IMAGE} as llgtrt_dev
+FROM ${BASE_IMAGE} AS llgtrt_dev
 
 ARG INSTALL_TRTLLM
 ARG USE_CXX11_ABI
