@@ -122,6 +122,7 @@ fn req_params_from_openai(params: &CommonCreateParams) -> Result<RequestParams> 
     let mut r = RequestParams {
         temperature: params.temperature,
         top_p: params.top_p,
+        min_p: params.min_p,
         max_new_tokens: params
             .max_completion_tokens
             .unwrap_or_else(|| params.max_tokens.unwrap_or(16)) as u32,
@@ -301,7 +302,16 @@ fn llg_grammar(params: &CommonCreateParams) -> Result<Option<TopLevelGrammar>> {
             log::debug!("using Lark grammar");
             lark_to_llguidance(lark_grammar)?
         }
-        _ => return Ok(None),
+        _ => {
+            if params.min_p > 0.0 {
+                // Returning a Dummy-grammar to enforce logit processing when min_p is set
+                let grm = TopLevelGrammar::from_regex(llguidance::api::RegexNode::Regex(
+                    r"(\n|.)*".to_string(),
+                ));
+                return Ok(Some(grm));
+            }
+            return Ok(None);
+        }
     };
     Ok(Some(grm))
 }

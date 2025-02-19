@@ -1,0 +1,6 @@
+{
+  tokenizer: {
+    bos_token: null,
+    n_vocab_override: 32064,
+  },
+}

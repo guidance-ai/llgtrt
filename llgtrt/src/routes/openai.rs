@@ -165,6 +165,9 @@ pub struct CommonCreateParams {
     /// tokens comprising the top 10% probability mass are considered.
     #[serde(default = "default_top_p")]
     pub top_p: f32,
+    /// Filters out tokens with probability less than min_p multiplied by the probability of the most likely token
+    #[serde(default)]
+    pub min_p: f32,
     /// A unique identifier representing your end-user, which can help OpenAI to monitor and detect
     /// abuse.
     #[allow(dead_code)]
