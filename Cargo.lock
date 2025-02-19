@@ -593,7 +593,7 @@ dependencies = [
 
 [[package]]
 name = "derivre"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "ahash",
  "anyhow",
@@ -1386,7 +1386,7 @@ dependencies = [
 
 [[package]]
 name = "llguidance"
-version = "0.6.26"
+version = "0.6.27"
 dependencies = [
  "anyhow",
  "derivre",
@@ -1405,7 +1405,7 @@ dependencies = [
 
 [[package]]
 name = "llguidance_py"
-version = "0.6.26"
+version = "0.6.27"
 dependencies = [
  "bytemuck",
  "llguidance",
@@ -2640,7 +2640,7 @@ dependencies = [
 
 [[package]]
 name = "toktrie"
-version = "0.6.26"
+version = "0.6.27"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -2651,7 +2651,7 @@ dependencies = [
 
 [[package]]
 name = "toktrie_hf_tokenizers"
-version = "0.6.26"
+version = "0.6.27"
 dependencies = [
  "anyhow",
  "log",
