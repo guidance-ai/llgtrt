@@ -643,9 +643,10 @@ pub async fn route_chat_completions(
     };
 
     let req_input = if app_state.py_state.enabled {
+        let req_params = req_params_from_openai(&request.params)?;
         app_state
             .py_state
-            .run_input_processor(chat_params)
+            .run_input_processor(chat_params, &req_params)
             .map_err(|e| {
                 log::warn!("chat py error: {}", e);
                 e

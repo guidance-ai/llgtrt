@@ -10,10 +10,10 @@ class Plugin(llgtrt_base.PluginBase):
 
 
     def process_input(
-        self, messages: list[dict], tools: list[dict]
+        self, params: llgtrt_base.ProcessInputParams
     ) -> llgtrt_base.ProcessInputResult:
         rendered = self.tokenizer.apply_chat_template(
-            messages, tools=tools, tokenize=False
+            params.messages, tools=params.tools, tokenize=False
         )
         assert isinstance(rendered, str)
         tokens = self.tokenizer.encode(rendered, add_special_tokens=False)

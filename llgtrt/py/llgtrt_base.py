@@ -4,6 +4,7 @@ import json
 import torch
 
 from typing import Any
+from dataclasses import dataclass
 
 WrappedTensor = tuple[torch.Tensor, int, int, tuple[int, ...]]
 
@@ -35,6 +36,21 @@ def to_dict(init):
             continue
         r[k] = getattr(init, k)
     return r
+
+
+@dataclass
+class ProcessInputParams:
+    messages: list[dict]
+    tools: list[dict] | None
+    json_schema: dict | None
+    streaming: bool
+    max_new_tokens: int
+    num_return_sequences: int
+    eos_token_id: int
+    seed: int
+
+    _chat_params: dict
+    _req_params: dict
 
 
 class ProcessInputResult:
@@ -78,11 +94,27 @@ class PluginBase:
         assert len(toks) > 0
         print("Base plugin created")
 
-    def _process_input(self, chat_params: str) -> dict:
-        ch = json.loads(chat_params)
-        if not ch["tools"]:
-            ch["tools"] = None
-        r = self.process_input(messages=ch["messages"], tools=ch["tools"])
+    def _process_input(self, chat_params: str, req_params: str) -> dict:
+        chat_p = json.loads(chat_params)
+        if not chat_p["tools"]:
+            chat_p["tools"] = None
+        if not chat_p["json_schema"]:
+            chat_p["json_schema"] = None
+        req_p = json.loads(req_params)
+        process_input_params = ProcessInputParams(
+            messages=chat_p["messages"],
+            tools=chat_p["tools"],
+            json_schema=chat_p["json_schema"],
+            streaming=req_p["streaming"],
+            max_new_tokens=req_p["max_new_tokens"],
+            num_return_sequences=req_p["num_return_sequences"],
+            eos_token_id=req_p["eos_token_id"],
+            seed=req_p["seed"],
+            _chat_params=chat_p,
+            _req_params=req_p,
+        )
+
+        r = self.process_input(process_input_params)
         assert isinstance(r, ProcessInputResult)
 
         if r.input_token_extra_ids is not None:
@@ -106,7 +138,5 @@ class PluginBase:
         # print(rr)
         return rr
 
-    def process_input(
-        self, messages: list[dict], tools: list[dict]
-    ) -> ProcessInputResult:
+    def process_input(self, params: ProcessInputParams) -> ProcessInputResult:
         raise NotImplementedError("process_input not implemented")

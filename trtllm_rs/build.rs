@@ -32,6 +32,10 @@ fn main() {
             "#[derive(Debug, Clone, Serialize, Deserialize)]\npub struct TlcEngineParams {",
         )
         .replace(
+            "#[derive(Debug, Clone)]\npub struct TlcRequestParams {",
+            "#[derive(Debug, Clone, Serialize, Deserialize)]\npub struct TlcRequestParams {",
+        )
+        .replace(
             "#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]",
             "#[derive(Debug, Copy, Clone, Hash, PartialEq, Eq, FromRepr)]",
         );

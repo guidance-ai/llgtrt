@@ -31,8 +31,9 @@ class Plugin(llgtrt_base.PluginBase):
         print("Plugin initialized from HF model directory:", init.hf_model_dir)
 
     def process_input(
-        self, messages: list[dict], tools: list[dict]
+        self, params: llgtrt_base.ProcessInputParams
     ) -> llgtrt_base.ProcessInputResult:
+        messages = params.messages
         print("process_input called, ", messages)
 
         # qwen utils can't handle OpenAI format messages

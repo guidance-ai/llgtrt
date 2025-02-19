@@ -12,7 +12,7 @@ use std::ffi::CStr;
 use std::fmt::Display;
 use std::sync::Arc;
 use toktrie::{TokEnv, TokTrie, TokenId};
-use trtllm_rs::{TlcDataType, TlcPromptParams, TlcShape, TlcTensor};
+use trtllm_rs::{RequestParams, TlcDataType, TlcPromptParams, TlcShape, TlcTensor};
 
 pub struct PyPromptParams {
     pub tlc_prompt_params: TlcPromptParams,
@@ -82,24 +82,33 @@ fn rt_error(e: impl Display) -> PyErr {
 impl PyState {
     pub fn test(&self) {
         let r = self
-            .run_input_processor(ChatParams {
-                messages: &vec![ChatCompletionMessageParams::User {
-                    content: ChatCompletionMessageContentPart::Text("Hello world!".to_string()),
-                    name: None,
-                }],
-                tools: &vec![],
-                json_schema: None,
-            })
+            .run_input_processor(
+                ChatParams {
+                    messages: &vec![ChatCompletionMessageParams::User {
+                        content: ChatCompletionMessageContentPart::Text("Hello world!".to_string()),
+                        name: None,
+                    }],
+                    tools: &vec![],
+                    json_schema: None,
+                },
+                &RequestParams::default(),
+            )
             .expect("Failed to run input processor");
         log::warn!("--test-py result: {:?}", r.prompt);
     }
 
-    pub fn run_input_processor(&self, chat_params: ChatParams) -> Result<RequestInput> {
+    pub fn run_input_processor(
+        &self,
+        chat_params: ChatParams,
+        req_params: &RequestParams,
+    ) -> Result<RequestInput> {
         let chat_params = serde_json::to_string(&chat_params).unwrap();
+        let req_params = serde_json::to_string(&req_params).unwrap();
         Python::with_gil(|py| {
             let loc = self.mk_locals(py);
             loc.set_item("chat_params", chat_params).unwrap();
-            let r = self.eval(py, "plugin._process_input(chat_params)", Some(&loc))?;
+            loc.set_item("req_params", req_params).unwrap();
+            let r = self.eval(py, "plugin._process_input(chat_params, req_params)", Some(&loc))?;
             let r2 = r
                 .downcast::<PyDict>()
                 .map_err(|e| PyRuntimeError::new_err(format!("Expected dict, got {}", e)))?;

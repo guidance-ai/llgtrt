@@ -604,21 +604,6 @@ dependencies = [
 
 [[package]]
 name = "derivre"
-version = "0.2.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "db270777d10181185c9df6bad7de72c9c00e638a9dda94bb25ce2a89bfa7937b"
-dependencies = [
- "ahash",
- "anyhow",
- "bytemuck",
- "bytemuck_derive",
- "hashbrown 0.15.2",
- "regex-syntax",
- "strum",
-]
-
-[[package]]
-name = "derivre"
 version = "0.2.5"
 dependencies = [
  "ahash",
@@ -1426,10 +1411,10 @@ dependencies = [
 
 [[package]]
 name = "llguidance"
-version = "0.6.26"
+version = "0.6.27"
 dependencies = [
  "anyhow",
- "derivre 0.2.4",
+ "derivre",
  "indexmap 2.7.1",
  "instant",
  "jsonschema",
@@ -1445,7 +1430,7 @@ dependencies = [
 
 [[package]]
 name = "llguidance_py"
-version = "0.6.26"
+version = "0.6.27"
 dependencies = [
  "bytemuck",
  "llguidance",
@@ -2708,7 +2693,7 @@ dependencies = [
 
 [[package]]
 name = "toktrie"
-version = "0.6.26"
+version = "0.6.27"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -2719,7 +2704,7 @@ dependencies = [
 
 [[package]]
 name = "toktrie_hf_tokenizers"
-version = "0.6.26"
+version = "0.6.27"
 dependencies = [
  "anyhow",
  "log",
