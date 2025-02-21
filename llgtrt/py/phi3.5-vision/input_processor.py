@@ -4,7 +4,6 @@ import llgtrt_base
 import torch
 
 import numpy as np
-import tensorrt_llm
 import subprocess
 
 subprocess.call(["pip", "install", "flash-attn", "--no-build-isolation"])
