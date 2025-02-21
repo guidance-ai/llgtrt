@@ -1,25 +1,20 @@
-import requests
+import time
 import llgtrt_base
 import torch
 import numpy as np
-import tensorrt_llm
-import subprocess
 
 # make sure qwen_vl_utils is installed
 # subprocess.call(["pip", "install", "qwen_vl_utils"])
 
-from transformers import Qwen2VLForConditionalGeneration, AutoTokenizer, AutoProcessor
+from transformers import Qwen2VLForConditionalGeneration, AutoConfig, AutoProcessor
 from qwen_vl_utils import process_vision_info
 from tensorrt_llm.functional import RotaryScalingType, RopeEmbeddingUtils
-from tensorrt_llm.runtime import ModelRunnerCpp
-from tensorrt_llm.layers.attention import MropeParams
 from llgtrt_native import PluginInit
 
 class Plugin(llgtrt_base.PluginBase):
     def __init__(self, init: PluginInit):
         super().__init__(init)
-        # tokenizer is already initialized by the base class
-        # self.tokenizer = AutoTokenizer.from_pretrained(init.hf_model_dir)
+        self.config = AutoConfig.from_pretrained(init.hf_model_dir)
         self.model = Qwen2VLForConditionalGeneration.from_pretrained(
             init.hf_model_dir, torch_dtype="bfloat16", device_map="cpu"
         )
@@ -66,7 +61,6 @@ class Plugin(llgtrt_base.PluginBase):
 
         # calculate visual-features
         input_ids = inputs["input_ids"].to(self.model.model.device)
-        text_embeds = self.model.model.embed_tokens(input_ids).to(self.visual_device)
         image_embeds = None
         if "pixel_values" in inputs:
             pixel_values = inputs["pixel_values"].to(self.visual_device)
@@ -74,49 +68,13 @@ class Plugin(llgtrt_base.PluginBase):
             pixel_values = pixel_values.type(self.model.visual.get_dtype())
             image_embeds = self.model.visual(pixel_values, grid_thw=image_grid_thw)
 
-            n_image_tokens = (input_ids == self.model.config.image_token_id).sum().item()
-            n_image_features = image_embeds.shape[0]
-            if n_image_tokens != n_image_features:
-                raise ValueError(
-                    f"Image features and image tokens do not match: tokens: {n_image_tokens}, features {n_image_features}"
-                )
-            image_mask = (
-                (input_ids == self.model.config.image_token_id)
-                .unsqueeze(-1)
-                .expand_as(text_embeds)
-                .to(text_embeds.device)
-            )
-            image_embeds = image_embeds.to(text_embeds.device, text_embeds.dtype)
-            text_embeds = text_embeds.masked_scatter(image_mask, image_embeds)
-
         position_ids = None
-        cache_position = None
         video_grid_thw = None
-        # rope_deltas = self.model.rope_deltas
         attention_mask = inputs["attention_mask"]
-
-        # if position_ids is None and input_ids is not None and (attention_mask is None or attention_mask.ndim == 2):
-        #     # calculate RoPE index once per generation in the pre-fill stage only
-        #     if (cache_position is not None and cache_position[0] == 0) or self.model.rope_deltas is None:
-        #         position_ids, rope_deltas = self.model.get_rope_index(
-        #             input_ids, image_grid_thw, video_grid_thw, attention_mask
-        #         )
-        #         self.model.rope_deltas = rope_deltas
-        #     # then use the prev pre-calculated rope-deltas to get the correct position ids
-        #     else:
-        #         batch_size, seq_length, _ = text_embeds.shape
-        #         delta = cache_position[0] + self.model.rope_deltas if cache_position is not None else 0
-        #         position_ids = torch.arange(seq_length, device=text_embeds.device)
-        #         position_ids = position_ids.view(1, -1).expand(batch_size, -1)
-        #         if cache_position is not None:  # otherwise `deltas` is an int `0`
-        #             delta = delta.repeat_interleave(batch_size // delta.shape[0], dim=0)
-        #         position_ids = position_ids.add(delta)
-        #         position_ids = position_ids.unsqueeze(0).expand(3, -1, -1)
 
         position_ids, rope_deltas = self.model.get_rope_index(
             input_ids, image_grid_thw, video_grid_thw, attention_mask
         )
-
         mrope_rotary_cos_sin, mrope_position_deltas = self._compute_mrope_args(position_ids, rope_deltas)
 
         # replace visual/video pad token with unique token id
@@ -131,23 +89,13 @@ class Plugin(llgtrt_base.PluginBase):
                 input_ids[idx] = value
                 value += 1
         input_ids = batch_input_ids_list[0].tolist()
-        
+
         r = llgtrt_base.ProcessInputResult(
             prompt=text,
-            tokens=input_ids,
-            # prompt_table=image_embeds.to("cpu") if image_embeds is not None else None,
-            # prompt_tasks=[0] if image_embeds is not None else None,
-            # mrope_rotary_sin_cos=mrope_rotary_cos_sin[0],
-            # mrope_position_deltas=mrope_position_deltas[0][0].to("cpu").item(),
-            # skip_cross_attn_blocks=None,
-            # encoder_input_features=None,
-            # encoder_output_length=None,
-            # cross_attention_masks=None,
-            # input_position_ids=None
+            tokens=input_ids
         )
 
         r.prompt_table = image_embeds
-        # r.prompt_tasks = [0]
         r.mrope_rotary_sin_cos = mrope_rotary_cos_sin[0].to("cpu")
         r.mrope_position_deltas = mrope_position_deltas[0][0].item()
 
