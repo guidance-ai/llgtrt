@@ -17,7 +17,8 @@ use crate::config::{config_info, CliConfig, LlgTrtConfig};
 use crate::jsonutil::json5_to_string;
 use crate::lora::LoraCache;
 use crate::state::AppState;
-use crate::{jsonutil, routes};
+use crate::tokenizer::setup_tokenizer;
+use crate::{jsonutil, py, routes};
 
 async fn auth_middleware(
     req: Request<Body>,
@@ -76,8 +77,23 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
         log::info!("Loading JSON5 config from {:?}", file_name);
         let file_content = std::fs::read_to_string(&file_name)
             .map_err(|e| anyhow!("Error reading config file {}: {}", file_name, e))?;
-        let patch = json5::from_str::<serde_json::Value>(&file_content)
+        let mut patch = json5::from_str::<serde_json::Value>(&file_content)
             .map_err(|e| anyhow!("Error in JSON5 in {}: {}", file_name, e))?;
+
+        for py_path in &["input_processor", "hf_model_dir", "visual_engine_dir"] {
+            if let Some(p) = patch["py"][py_path].as_str() {
+                let p = std::path::Path::new(p);
+                if p.is_relative() {
+                    let p = std::path::Path::new(file_name).parent().unwrap().join(p);
+                    let p = p
+                        .canonicalize()
+                        .map_err(|e| anyhow!("Error canonicalizing path {}: {}", p.display(), e))?;
+                    patch["py"][py_path] =
+                        serde_json::Value::String(p.to_str().unwrap().to_string());
+                }
+            }
+        }
+
         jsonutil::json_merge(&mut config, &patch);
     }
 
@@ -122,6 +138,28 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
         return Ok(());
     }
 
+    if config.py.input_processor.is_none() {
+        let p = std::path::Path::new(&cli_config.engine).join("input_processor.py");
+        if p.exists() {
+            log::info!("Using input processor from {:?}", p);
+            config.py.input_processor =
+                Some(p.canonicalize().unwrap().to_str().unwrap().to_string());
+        }
+    }
+
+    if config.py.input_processor.is_some() {
+        if config.py.hf_model_dir.is_none() {
+            config.py.hf_model_dir = Some(cli_config.engine.clone());
+        }
+        if config.py.visual_engine_dir.is_none() {
+            let p = std::path::Path::new(&cli_config.engine).join("visual_engine");
+            config.py.visual_engine_dir = Some(p.to_str().unwrap().to_string());
+        }
+        if config.py.arguments.is_null() {
+            config.py.arguments = serde_json::Value::Object(Default::default());
+        }
+    }
+
     let runtime_config = &config.runtime;
     let p = &mut exec_config.trt_params;
 
@@ -134,6 +172,16 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
         };
     }
 
+    macro_rules! set_field_opt {
+        ($fld:ident) => {
+            if let Some(v) = runtime_config.$fld {
+                p.$fld = v
+                    .try_into()
+                    .expect(concat!("Invalid value for ", stringify!($fld)));
+            }
+        };
+    }
+
     set_field!(enable_chunked_context);
     set_field!(enable_kv_cache_reuse);
     set_field!(enable_batch_size_tuning);
@@ -143,13 +191,25 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
     set_field!(max_queue_size);
     set_field!(guaranteed_no_evict);
     set_field!(kv_cache_free_gpu_mem_fraction);
+    set_field_opt!(cross_kv_cache_fraction);
+    set_field_opt!(secondary_offload_min_priority);
+    set_field_opt!(event_buffer_max_size);
     p.kv_cache_host_memory_bytes = runtime_config.kv_cache_host_memory_megabytes * 1024 * 1024;
 
     log::info!("Initializing executor with config: {:?}", exec_config);
 
+    if cli_config.test_py {
+        let (tok_env, _) = setup_tokenizer(&cli_config, &config)?;
+        let py_state = py::init(&tok_env, &cli_config, &config).expect("Error initializing Python");
+        py_state.test();
+        return Ok(());
+    }
+
     let (executor, tok_env, chat_builder) = AsyncExecutor::new(&cli_config, &config, exec_config)?;
 
     // we only get here on rank 0
+
+    let py_state = py::init(&tok_env, &cli_config, &config)?;
 
     let mut parser_factory = ParserFactory::new(
         &tok_env,
@@ -187,33 +247,40 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
         parser_factory,
         lora_root: cli_config.lora_root,
         lora_cache: LoraCache::new(),
+        py_state,
     };
+    let state = Arc::new(state);
 
-    // warmup request
-    log::info!("Warming up executor");
-    let mut warmup_tokens =
-        state.tokenize_with_bos("The ultimate answer to life, the universe and everything is");
-    log::debug!("Warmup tokens: {:?}", warmup_tokens);
-    let (_, mut rx) = AsyncExecutor::lock().add_request(
-        &RequestInit {
-            tokens: warmup_tokens.clone(),
-            params: RequestParams {
-                max_new_tokens: 10,
-                ..Default::default()
+    if state.py_state.enabled {
+        log::info!("Skipping warmup due to python");
+    } else {
+        // warmup request
+        log::info!("Warming up executor");
+        let mut warmup_tokens =
+            state.tokenize_with_bos("The ultimate answer to life, the universe and everything is");
+        log::debug!("Warmup tokens: {:?}", warmup_tokens);
+        let (_, mut rx) = AsyncExecutor::lock().add_request(
+            &RequestInit {
+                tokens: warmup_tokens.clone(),
+                params: RequestParams {
+                    max_new_tokens: 10,
+                    ..Default::default()
+                },
+                client_req_id: ClientReqId::new(1),
+                lora_params: None,
+                is_run: false,
             },
-            client_req_id: ClientReqId::new(1),
-            lora_params: None,
-            is_run: false,
-        },
-        vec![],
-    )?;
-    while let Some(r) = rx.recv().await {
-        warmup_tokens.extend_from_slice(&r.response.tokens);
+            None,
+            vec![],
+        )?;
+        while let Some(r) = rx.recv().await {
+            warmup_tokens.extend_from_slice(&r.response.tokens);
+        }
+        log::info!(
+            "Warmup: {}",
+            state.tok_env.tok_trie().tokens_dbg(&warmup_tokens)
+        );
     }
-    log::info!(
-        "Warmup: {}",
-        state.tok_env.tok_trie().tokens_dbg(&warmup_tokens)
-    );
 
     let api_key = cli_config.api_key.clone();
 
@@ -225,7 +292,7 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
         .route("/v1/health/ready", get(routes::ready_check))
         .route("/v1/run", post(routes::route_llguidance))
         .route("/guidance", post(routes::route_llguidance))
-        .with_state(Arc::new(state))
+        .with_state(state)
         .layer(middleware::from_fn(move |req, next| {
             auth_middleware(req, next, api_key.clone())
         }));

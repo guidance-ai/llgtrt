@@ -8,6 +8,9 @@
 #include "tensorrt_llm/executor/executor.h"
 #include "tensorrt_llm/plugins/api/tllmPlugin.h"
 
+#include "tensorrt_llm/runtime/iTensor.h"
+#include <NvInferRuntime.h>
+
 #include "tlc.h"
 
 #define TRY try
@@ -53,6 +56,9 @@ void tlc_default_init_params(TlcInitParams* params)
     e->gpu_weights_percent = 1.0;
     e->kv_cache_free_gpu_mem_fraction = 0.9;
     e->kv_cache_onboard_blocks = true;
+    e->cross_kv_cache_fraction = NAN;
+    e->secondary_offload_min_priority = INT32_MIN;
+    e->event_buffer_max_size = 0;
 }
 
 void _tlc_set_logits_post_processor(TlcInitParams const* params, tle::ExecutorConfig* config);
@@ -61,6 +67,11 @@ template <typename T>
 static std::optional<T> positive_opt(T value)
 {
     return value > 0 ? std::optional<T>(value) : std::nullopt;
+}
+
+static std::optional<float> nan_opt(float value)
+{
+    return std::isnan(value) ? std::nullopt : std::optional<float>(value);
 }
 
 TlcStatus tlc_init(TlcInitParams const* params, TlcExecutor** res)
@@ -90,7 +101,11 @@ TlcStatus tlc_init(TlcInitParams const* params, TlcExecutor** res)
             ep->kv_cache_free_gpu_mem_fraction > 0 && ep->max_tokens_in_paged_kv_cache <= 0
                 ? std::optional<float>(ep->kv_cache_free_gpu_mem_fraction)
                 : std::nullopt,
-            ep->kv_cache_host_memory_bytes, ep->kv_cache_onboard_blocks);
+            ep->kv_cache_host_memory_bytes, ep->kv_cache_onboard_blocks, nan_opt(ep->cross_kv_cache_fraction),
+            ep->secondary_offload_min_priority == INT32_MIN
+                ? std::nullopt
+                : std::optional<int32_t>(ep->secondary_offload_min_priority),
+            ep->event_buffer_max_size);
 
         tle::DynamicBatchConfig dynamicBatchConfig(ep->enable_batch_size_tuning, ep->enable_max_num_tokens_tuning);
 
@@ -132,13 +147,84 @@ void tlc_shutdown(TlcExecutor* ctx)
 
 tle::Shape _tlc_to_tle_shape(TlcShape tlc_shape)
 {
-    return tle::Shape(tlc_shape.dims_ptr, tlc_shape.num_dims);
+    return tle::Shape(tlc_shape.dims, tlc_shape.num_dims);
+}
+
+static tle::DataType to_tle_datatype(TlcDataType t)
+{
+    switch (t)
+    {
+    case TLC_DT_BOOL: return tle::DataType::kBOOL;
+    case TLC_DT_U8: return tle::DataType::kUINT8;
+    case TLC_DT_I8: return tle::DataType::kINT8;
+    case TLC_DT_I32: return tle::DataType::kINT32;
+    case TLC_DT_I64: return tle::DataType::kINT64;
+    case TLC_DT_BF16: return tle::DataType::kBF16;
+    case TLC_DT_F8: return tle::DataType::kFP8;
+    case TLC_DT_F16: return tle::DataType::kFP16;
+    case TLC_DT_F32: return tle::DataType::kFP32;
+    default: throw std::runtime_error("Unsupported data type");
+    }
+}
+
+static nvinfer1::DataType to_nvinfer_datatype(TlcDataType t)
+{
+    static_assert((int) TLC_DT_F32 == (int) nvinfer1::DataType::kFLOAT);
+    static_assert((int) TLC_DT_F16 == (int) nvinfer1::DataType::kHALF);
+    static_assert((int) TLC_DT_I8 == (int) nvinfer1::DataType::kINT8);
+    static_assert((int) TLC_DT_I32 == (int) nvinfer1::DataType::kINT32);
+    static_assert((int) TLC_DT_BOOL == (int) nvinfer1::DataType::kBOOL);
+    static_assert((int) TLC_DT_U8 == (int) nvinfer1::DataType::kUINT8);
+    static_assert((int) TLC_DT_F8 == (int) nvinfer1::DataType::kFP8);
+    static_assert((int) TLC_DT_BF16 == (int) nvinfer1::DataType::kBF16);
+    static_assert((int) TLC_DT_I64 == (int) nvinfer1::DataType::kINT64);
+    static_assert((int) TLC_DT_I4 == (int) nvinfer1::DataType::kINT4);
+
+    if ((unsigned) t > (unsigned) nvinfer1::DataType::kINT4)
+        throw std::runtime_error("Unsupported data type");
+
+    return (nvinfer1::DataType) t;
 }
 
 tle::Tensor _tlc_to_tle_tensor(TlcTensor tlc_tensor)
 {
     // The copyToCpu call at the end is required to make this Tensor manage its own memory
-    return tle::Tensor::of(static_cast<tle::DataType>(tlc_tensor.data_type), const_cast<void*>(tlc_tensor.data_ptr), _tlc_to_tle_shape(tlc_tensor.shape)).copyToCpu();
+    return tle::Tensor::of(to_tle_datatype(tlc_tensor.data_type), const_cast<void*>(tlc_tensor.data_ptr),
+        _tlc_to_tle_shape(tlc_tensor.shape))
+        .copyToCpu();
+}
+
+tle::Tensor _tlc_to_tle_tensor_no_copy(TlcTensor tlc_tensor)
+{
+    TLLM_CHECK_WITH_INFO(tlc_tensor.shape.num_dims <= nvinfer1::Dims::MAX_DIMS, "Number of dimensions is too large");
+    nvinfer1::Dims shape{};
+    shape.nbDims = tlc_tensor.shape.num_dims;
+    std::copy(tlc_tensor.shape.dims, tlc_tensor.shape.dims + tlc_tensor.shape.num_dims, shape.d);
+    auto itensor = tensorrt_llm::runtime::ITensor::wrap(
+        (void*) tlc_tensor.data_ptr, to_nvinfer_datatype(tlc_tensor.data_type), shape);
+    return tle::detail::ofITensor(std::move(itensor));
+}
+
+static void check_dtype(TlcTensor t, TlcDataType expected, char const* context)
+{
+    if (t.data_type != expected)
+    {
+        throw std::runtime_error(std::string("Expected ") + context + " to have data type " + std::to_string(expected)
+            + ", got " + std::to_string(t.data_type));
+    }
+}
+
+static bool tlc_tensor_is_none(TlcTensor const& tlc_tensor)
+{
+    return tlc_tensor.data_ptr == nullptr;
+}
+
+static size_t tlc_shape_volume(TlcShape const& shape)
+{
+    size_t volume = 1;
+    for (size_t i = 0; i < shape.num_dims; ++i)
+        volume *= shape.dims[i];
+    return volume;
 }
 
 TlcStatus tlc_enqueue_request(TlcExecutor* ctx, TlcRequest const* request, TlcReqId* res)
@@ -153,6 +239,7 @@ TlcStatus tlc_enqueue_request(TlcExecutor* ctx, TlcRequest const* request, TlcRe
         tle::SamplingConfig samplingConfig;
 
         auto const& p = request->params;
+        auto const& pp = request->prompt_params;
 
         if (std::isfinite(p.temperature))
             samplingConfig.setTemperature(p.temperature);
@@ -172,21 +259,68 @@ TlcStatus tlc_enqueue_request(TlcExecutor* ctx, TlcRequest const* request, TlcRe
 
         tle::VecTokens tokens(request->tokens, request->tokens + request->num_tokens);
         tle::Request req(std::move(tokens), p.max_new_tokens, p.streaming, samplingConfig, outputConfig);
+
         req.setClientId(request->client_req_id);
         req.setPriority(p.priority);
+
         if (p.eos_token_id != UINT32_MAX)
             req.setEndId(p.eos_token_id);
+
         if (ctx->has_logits_post_processor && p.use_logits_post_processor)
             req.setLogitsPostProcessorName(tle::Request::kBatchedPostProcessorName);
 
-        if (request->lora_params.lora_id) {
+        if (!tlc_tensor_is_none(pp.prompt_table))
+        {
+            std::optional<std::vector<tle::IdType>> inputTokenExtraIds = std::nullopt;
+            if (!tlc_tensor_is_none(pp.input_token_extra_ids))
+            {
+                check_dtype(pp.input_token_extra_ids, TLC_DT_I64, "input_token_extra_ids");
+                auto ptr = (tle::IdType*) pp.input_token_extra_ids.data_ptr;
+                auto len = tlc_shape_volume(pp.input_token_extra_ids.shape);
+                inputTokenExtraIds = std::vector(ptr, ptr + len);
+            }
+            auto ptune = tle::PromptTuningConfig(_tlc_to_tle_tensor_no_copy(pp.prompt_table), inputTokenExtraIds);
+            req.setPromptTuningConfig(ptune);
+        }
+
+        if (!tlc_tensor_is_none(pp.mrope_rotary_sin_cos))
+        {
+            auto mrope
+                = tle::MropeConfig(_tlc_to_tle_tensor_no_copy(pp.mrope_rotary_sin_cos), pp.mrope_position_deltas);
+            req.setMropeConfig(mrope);
+        }
+
+        if (!tlc_tensor_is_none(pp.skip_cross_attn_blocks))
+            req.setSkipCrossAttnBlocks(_tlc_to_tle_tensor_no_copy(pp.skip_cross_attn_blocks));
+
+        if (pp.encoder_output_length > 0)
+            req.setEncoderOutputLength(pp.encoder_output_length);
+
+        if (!tlc_tensor_is_none(pp.encoder_input_features))
+            req.setEncoderInputFeatures(_tlc_to_tle_tensor_no_copy(pp.encoder_input_features));
+
+        if (!tlc_tensor_is_none(pp.cross_attention_masks))
+            req.setCrossAttentionMask(_tlc_to_tle_tensor_no_copy(pp.cross_attention_masks));
+
+        if (!tlc_tensor_is_none(pp.input_position_ids))
+        {
+            check_dtype(pp.input_position_ids, TLC_DT_I32, "input_position_ids");
+            auto ptr = (std::int32_t*) pp.input_position_ids.data_ptr;
+            auto len = tlc_shape_volume(pp.input_position_ids.shape);
+            req.setPositionIds(std::vector(ptr, ptr + len));
+        }
+
+        if (request->lora_params.lora_id)
+        {
             auto const& lp = request->lora_params;
             std::optional<tle::Tensor> weights;
-            if (lp.weights.data_ptr) {
+            if (lp.weights.data_ptr)
+            {
                 weights = _tlc_to_tle_tensor(lp.weights);
             }
             std::optional<tle::Tensor> config;
-            if (lp.config.data_ptr) {
+            if (lp.config.data_ptr)
+            {
                 config = _tlc_to_tle_tensor(lp.config);
             }
             tle::LoraConfig loraConfig(lp.lora_id, weights, config);
