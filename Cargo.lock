@@ -411,9 +411,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.5.30"
+version = "4.5.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "92b7b18d71fad5313a1e320fa9897994228ce274b60faa4d694fe0ea89cd9e6d"
+checksum = "027bb0d98429ae334a8698531da7077bdf906419543a35a55c2cb1b66437d767"
 dependencies = [
  "clap_builder",
  "clap_derive",
@@ -421,9 +421,9 @@ dependencies = [
 
 [[package]]
 name = "clap_builder"
-version = "4.5.30"
+version = "4.5.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a35db2071778a7344791a4fb4f95308b5673d219dee3ae348b86642574ecc90c"
+checksum = "5589e0cba072e0f3d23791efac0fd8627b49c829c196a492e88168e6a669d863"
 dependencies = [
  "anstream",
  "anstyle",
@@ -605,7 +605,7 @@ dependencies = [
 
 [[package]]
 name = "derivre"
-version = "0.2.5"
+version = "0.3.1"
 dependencies = [
  "ahash",
  "anyhow",
@@ -1342,7 +1342,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc2f4eb4bc735547cfed7c0a4922cbd04a4655978c09b54f1f7b228750664c34"
 dependencies = [
  "cfg-if",
- "windows-targets 0.52.6",
+ "windows-targets 0.48.5",
 ]
 
 [[package]]
@@ -1400,7 +1400,7 @@ dependencies = [
 
 [[package]]
 name = "llguidance"
-version = "0.6.27"
+version = "0.6.30"
 dependencies = [
  "anyhow",
  "derivre",
@@ -1419,7 +1419,7 @@ dependencies = [
 
 [[package]]
 name = "llguidance_py"
-version = "0.6.27"
+version = "0.6.30"
 dependencies = [
  "bytemuck",
  "llguidance",
@@ -2272,6 +2272,7 @@ name = "sample_parser"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "clap",
  "lazy_static",
  "llguidance",
  "serde",
@@ -2655,7 +2656,7 @@ dependencies = [
 
 [[package]]
 name = "toktrie"
-version = "0.6.27"
+version = "0.6.30"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -2666,7 +2667,7 @@ dependencies = [
 
 [[package]]
 name = "toktrie_hf_tokenizers"
-version = "0.6.27"
+version = "0.6.30"
 dependencies = [
  "anyhow",
  "log",

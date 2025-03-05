@@ -71,7 +71,7 @@
     "#": "Number of Earley items created for the whole token mask.\nDefault: 50_000\nSpeed: 20k/ms"
    },
    "max_lexer_states": {
-    "#": "Maximum number of lexer states.\nDefault: 50_000"
+    "#": "Maximum number of lexer states.\nAffects memory consumption, but not the speed for the most part.\nDefault: 250_000\nSpeed: ~1-2kB of memory per state"
    },
    "max_grammar_size": {
     "#": "Maximum size of the grammar (symbols in productions)\nDefault: 500_000 (a few megabytes of JSON)"
