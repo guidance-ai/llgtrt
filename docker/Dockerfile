@@ -63,6 +63,10 @@ RUN pip uninstall -y guidance
 
 RUN pip install --upgrade transformers
 
+# TODO test this
+# RUN pip install flash-attn --no-build-isolation
+# RUN pip install qwen_vl_utils
+
 RUN cd /usr/local/lib/python3.12/dist-packages/tensorrt_llm/libs/ && \
     ln -s libnvinfer_plugin_tensorrt_llm.so libnvinfer_plugin_tensorrt_llm.so.10
 

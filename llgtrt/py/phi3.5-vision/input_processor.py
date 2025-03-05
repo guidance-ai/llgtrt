@@ -3,10 +3,7 @@ import requests
 import llgtrt_base
 import torch
 
-import numpy as np
-import subprocess
-
-subprocess.call(["pip", "install", "flash-attn", "--no-build-isolation"])
+# subprocess.call(["pip", "install", "flash-attn", "--no-build-isolation"])
 
 from torch import nn
 from PIL import Image
