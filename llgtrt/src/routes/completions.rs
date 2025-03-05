@@ -7,9 +7,11 @@ use axum::http::HeaderMap;
 use axum::response::sse::{Event, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
+use core::panic;
 use futures_core::Stream;
 use llguidance::api::{GrammarWithLexer, TopLevelGrammar};
 use llguidance::{lark_to_llguidance, Constraint, JsonCompileOptions};
+use safetensors::Dtype;
 use serde_json::{json, Value};
 use std::fmt::Display;
 use std::path::Path;
@@ -17,13 +19,14 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc::UnboundedReceiver;
 use toktrie::TokEnv;
-use trtllm_rs::{ClientReqId, LoraParams, ReqId, RequestInit, RequestParams, Tensor};
+use trtllm_rs::{ClientReqId, LoraParams, ReqId, RequestInit, RequestParams, Tensor, TlcDataType};
 use uuid::Uuid;
 
 use crate::async_exec::{map_finish_reason, AsyncExecutor, StepResults};
 use crate::chat::ChatParams;
 use crate::error::AppError;
 use crate::lora::LoraCache;
+use crate::py::PyPromptParams;
 use crate::routes::api_ext::{tools_to_schema, LlgLogLevel};
 use crate::routes::openai::{JsonSchemaOptions, LoadLoraWeightsOption, ResponseFormat, ToolChoice};
 use crate::state::AppState;
@@ -70,6 +73,22 @@ impl Display for ReqInfo {
             "ReqInfo {{ {} {} {} }}",
             self.req_id, self.client_req_id, self.cmpl_id
         )
+    }
+}
+
+pub struct RequestInput {
+    pub tokens: Vec<u32>,
+    pub prompt: String,
+    pub prompt_params: Option<Arc<PyPromptParams>>,
+}
+
+impl RequestInput {
+    pub fn from_text(app_state: &AppState, text: &str) -> Self {
+        Self {
+            tokens: app_state.tokenize_with_bos(text),
+            prompt: text.to_string(),
+            prompt_params: None,
+        }
     }
 }
 
@@ -174,7 +193,7 @@ fn load_lora_tensors<P: AsRef<Path>>(
     let config_size: Vec<i64> = config_view.shape().iter().map(|&x| x as i64).collect();
     let config_tensor = Tensor {
         size: config_size,
-        dtype: config_view.dtype(),
+        dtype: safetensors_dtype_to_tlc(config_view.dtype()),
         data: config_view.data().to_vec(),
     };
 
@@ -183,7 +202,7 @@ fn load_lora_tensors<P: AsRef<Path>>(
     let weights_size: Vec<i64> = weights_view.shape().iter().map(|&x| x as i64).collect();
     let weights_tensor = Tensor {
         size: weights_size,
-        dtype: weights_view.dtype(),
+        dtype: safetensors_dtype_to_tlc(weights_view.dtype()),
         data: weights_view.data().to_vec(),
     };
 
@@ -384,13 +403,14 @@ async fn completions_stream_or_not(
 
 async fn mk_req_info(
     app_state: &AppState,
-    prompt: String,
+    req_input: RequestInput,
     params: &CommonCreateParams,
     is_chat: bool,
     is_run: bool,
 ) -> Result<Response, AppError> {
     let mut req_params = req_params_from_openai(params)?;
-    let mut tokens = app_state.tokenize_with_bos(&prompt);
+    let mut tokens = req_input.tokens;
+    let prompt = req_input.prompt;
     log::debug!("{}", app_state.tok_env.tok_trie().tokens_dbg(&tokens));
 
     let eos_token = if is_chat {
@@ -477,7 +497,11 @@ async fn mk_req_info(
     )?;
     let prompt_tokens = req_init.tokens.len();
 
-    let (req_id, recv) = AsyncExecutor::lock().add_request(&req_init, llg.clone())?;
+    let (req_id, recv) = AsyncExecutor::lock().add_request(
+        &req_init,
+        req_input.prompt_params.clone(),
+        llg.clone(),
+    )?;
 
     let info = build_req_info(
         req_id,
@@ -513,8 +537,11 @@ async fn mk_req_info(
                     )?;
                     let prompt_tokens = req_init.tokens.len();
 
-                    let (req_id, recv) =
-                        AsyncExecutor::lock().add_request(&req_init, llg.clone())?;
+                    let (req_id, recv) = AsyncExecutor::lock().add_request(
+                        &req_init,
+                        req_input.prompt_params.clone(),
+                        llg.clone(),
+                    )?;
 
                     let info = build_req_info(
                         req_id,
@@ -543,6 +570,7 @@ async fn mk_req_info(
     }
 }
 
+// #[axum::debug_handler]
 pub async fn route_completions(
     _headers: HeaderMap,
     State(app_state): State<Arc<AppState>>,
@@ -556,14 +584,14 @@ pub async fn route_completions(
         return Err(e.into());
     }
 
-    mk_req_info(
-        &app_state,
-        request.prompt[0].clone(),
-        &request.params,
-        false,
-        false,
-    )
-    .await
+    let req_input = RequestInput::from_text(&app_state, &request.prompt[0]);
+
+    mk_req_info(&app_state, req_input, &request.params, false, false)
+        .await
+        .map_err(|e| {
+            log::warn!("completion error: {}", e);
+            e
+        })
 }
 
 pub async fn route_chat_completions(
@@ -605,26 +633,45 @@ pub async fn route_chat_completions(
         request.params.response_format = Some(ResponseFormat::Llguidance { grammar });
     }
 
-    let chat_history = if request.include_json_schema_in_prompt.unwrap_or(true) {
+    let chat_params = if request.include_json_schema_in_prompt.unwrap_or(true) {
         let json_schema = match &request.params.response_format {
             Some(ResponseFormat::JsonSchema { json_schema }) => json_schema.schema.as_ref(),
             _ => None,
         };
-        app_state.chat_builder.build(ChatParams {
+        ChatParams {
             messages: &request.messages,
             tools: &request.tools,
             json_schema,
-        })?
+        }
     } else {
         // skip schema in prompt
-        app_state.chat_builder.build(ChatParams {
+        ChatParams {
             messages: &request.messages,
             tools: &vec![],
             json_schema: None,
-        })?
+        }
     };
 
-    mk_req_info(&app_state, chat_history, &request.params, true, false).await
+    let req_input = if app_state.py_state.enabled {
+        let req_params = req_params_from_openai(&request.params)?;
+        app_state
+            .py_state
+            .run_input_processor(chat_params, &req_params)
+            .map_err(|e| {
+                log::warn!("chat py error: {}", e);
+                e
+            })?
+    } else {
+        let text = app_state.chat_builder.build(chat_params)?;
+        RequestInput::from_text(&app_state, &text)
+    };
+
+    mk_req_info(&app_state, req_input, &request.params, true, false)
+        .await
+        .map_err(|e| {
+            log::warn!("chat error: {}", e);
+            e
+        })
 }
 
 fn json_to_llg(schema: Value) -> Result<TopLevelGrammar> {
@@ -1075,6 +1122,31 @@ pub async fn route_llguidance(
     } else {
         request.prompt.clone().unwrap_or(String::new())
     };
+    let req_input = RequestInput::from_text(&app_state, &chat_history);
 
-    mk_req_info(&app_state, chat_history, &common, is_chat, true).await
+    mk_req_info(&app_state, req_input, &common, is_chat, true)
+        .await
+        .map_err(|e| {
+            log::warn!("llg error: {}", e);
+            e
+        })
+}
+
+fn safetensors_dtype_to_tlc(dtype: Dtype) -> TlcDataType {
+    match dtype {
+        Dtype::BOOL => TlcDataType::TLC_DT_BOOL,
+        Dtype::U8 => TlcDataType::TLC_DT_U8,
+        Dtype::I8 => TlcDataType::TLC_DT_I8,
+        Dtype::F8_E4M3 => TlcDataType::TLC_DT_F8,
+        Dtype::F8_E5M2 => panic!("F8_E5M2 not supported"), // we support the other one
+        Dtype::F16 => TlcDataType::TLC_DT_F16,
+        Dtype::BF16 => TlcDataType::TLC_DT_BF16,
+        Dtype::I32 => TlcDataType::TLC_DT_I32,
+        Dtype::F32 => TlcDataType::TLC_DT_F32,
+        Dtype::I64 => TlcDataType::TLC_DT_I64,
+
+        Dtype::U64 | Dtype::U32 | Dtype::F64 | Dtype::I16 | Dtype::U16 | _ => {
+            panic!("unsupported dtype: {:?}", dtype)
+        }
+    }
 }

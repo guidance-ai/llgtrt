@@ -40,6 +40,22 @@ pub struct TrtLlmRuntimeConfig {
     /// Host memory to use for KV cache
     pub kv_cache_host_memory_megabytes: usize,
 
+    /// Controls whether offloaded blocks should be onboarded back into primary memory before being reused.
+    /// Defaults to true.
+    pub kv_cache_onboard_blocks: bool,
+
+    /// The fraction of the KV Cache memory should be reserved for cross attention
+    /// If set to p, self attention will use 1-p of KV Cache memory and cross attention
+    /// will use p of KV Cache memory.
+    /// Should only be set when using encoder-decoder model.
+    pub cross_kv_cache_fraction: Option<f32>,
+
+    /// Only blocks with priority > mSecondaryOfflineMinPriority can be offloaded to secondary memory.
+    pub secondary_offload_min_priority: Option<i32>,
+
+    /// Max size of the KV cache event buffer
+    pub event_buffer_max_size: Option<usize>,
+
     /// Control automatic tuning of batch size
     /// Defaults to true (unlike trtllm)
     pub enable_batch_size_tuning: bool,
@@ -62,8 +78,29 @@ impl Default for TrtLlmRuntimeConfig {
             kv_cache_host_memory_megabytes: 0,
             enable_batch_size_tuning: true,
             enable_max_num_tokens_tuning: true,
+            kv_cache_onboard_blocks: true,
+            cross_kv_cache_fraction: None,
+            secondary_offload_min_priority: None,
+            event_buffer_max_size: None,
         }
     }
+}
+
+#[derive(Debug, Serialize, Deserialize, Default)]
+pub struct LlgTrtPyConfig {
+    /// Path to a Python script that does multi-modal and chat template processing
+    /// Defaults to <engine>/input_processor.py if it exists
+    pub input_processor: Option<String>,
+
+    /// Path to HuggingFace model directory; defaults to engine directory
+    pub hf_model_dir: Option<String>,
+
+    /// Path to TRT-LLM visual engine; defaults to <engine>/visual_engine
+    pub visual_engine_dir: Option<String>,
+
+    /// Additional arguments passed to the Python script
+    #[serde(default)]
+    pub arguments: serde_json::Value,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -80,6 +117,9 @@ pub struct LlgTrtConfig {
 
     /// Configuration for the LLGuidance constraint library
     pub llguidance: LlgConfig,
+
+    /// Configuration for the embedded Python API
+    pub py: LlgTrtPyConfig,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -160,4 +200,8 @@ pub struct CliConfig {
     /// Print the chat template and exit
     #[arg(long, help_heading = CONFIG_OPTIONS)]
     pub print_chat_template: bool,
+
+    /// Test python plugin initialization and exit
+    #[arg(long)]
+    pub test_py: bool,
 }

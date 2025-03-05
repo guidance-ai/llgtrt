@@ -38,5 +38,8 @@ async fn main() -> anyhow::Result<()> {
     log::info!("Setting NCCL_P2P_LEVEL=SYS; see https://github.com/NVIDIA/TensorRT-LLM/releases/tag/v0.16.0");
     env::set_var("NCCL_P2P_LEVEL", "SYS");
 
+    log::info!("Setting TOKENIZERS_PARALLELISM=false");
+    env::set_var("TOKENIZERS_PARALLELISM", "false");
+
     startup::run_server(config).await
 }
