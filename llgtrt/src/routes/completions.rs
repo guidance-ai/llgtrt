@@ -613,9 +613,9 @@ pub async fn route_chat_completions(
 
         let lark_grm_templ = match &request.tool_choice {
             ToolChoice::Simple(ToolChoiceOption::None) => r"start: /(.|\n)*/",
-            ToolChoice::Simple(ToolChoiceOption::Auto) => r"start: /[^{](.|\n)*/ | {json_start} @1",
+            ToolChoice::Simple(ToolChoiceOption::Auto) => r"start: /[^{](.|\n)*/ | {json_start} @json_schema",
             ToolChoice::Simple(ToolChoiceOption::Required) | ToolChoice::Advanced(_) => {
-                r"start: {json_start} @1"
+                r"start: {json_start} @json_schema"
             }
         };
 
