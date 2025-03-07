@@ -62,7 +62,7 @@ __inline__ __device__ void blockReduceMax2(T& val, int& idx, T flt_max)
 
 template <typename T>
 __global__ void mask_logits_kernel(T** logit_ptrs, int64_t* mask_offsets, size_t batch_size, size_t n_vocab,
-    size_t mask_stride, float* temperatures, T flt_max, float* mask_fractions)
+    size_t mask_stride, float* temperatures, float* ln_min_p, T flt_max, float* mask_fractions)
 {
     auto const batch_idx = blockIdx.x;
     auto logits_ptr = logit_ptrs[batch_idx];
@@ -135,6 +135,10 @@ __global__ void mask_logits_kernel(T** logit_ptrs, int64_t* mask_offsets, size_t
             else
             {
                 logit_adjusted = (logit - s_max_val_allowed) * beta;
+                if ((float) logit_adjusted < ln_min_p[batch_idx])
+                {
+                    logit_adjusted = -flt_max;
+                }
             }
         }
 
@@ -154,6 +158,7 @@ void mask_logits_ext(int64_t* d_logit_ptrs, // in,out [batch_size]
     int64_t* d_mask_offsets,                // in [int32_t,mask_stride], [batch_size]
     int64_t mask_fractions_offset,          // out, float, [batch_size]
     int64_t temperature_offset,             // in, float, [batch_size]; can be 0.0f for argmax
+    int64_t ln_min_p_offset,                // in, float, [batch_size]; log_e(min_p) for min_p > 0.0f, -FLT_MAX otherwise
     size_t batch_size,                      // current batch size
     size_t n_vocab,                         // vocab size
     size_t mask_stride,                     // n_vocab / 32 or thereabouts
@@ -167,10 +172,11 @@ void mask_logits_ext(int64_t* d_logit_ptrs, // in,out [batch_size]
 
     float* mask_fractions = reinterpret_cast<float*>((uint8_t*) d_logit_ptrs + mask_fractions_offset);
     float* temperatures = reinterpret_cast<float*>((uint8_t*) d_logit_ptrs + temperature_offset);
+    float* ln_min_ps = reinterpret_cast<float*>((uint8_t*) d_logit_ptrs + ln_min_p_offset);
 
 #define LAUNCH_KERNEL(T, m)                                                                                            \
-    mask_logits_kernel<T><<<grid, block, 0, stream>>>(                                                                 \
-        (T**) d_logit_ptrs, d_mask_offsets, batch_size, n_vocab, mask_stride, temperatures, m, mask_fractions)
+    mask_logits_kernel<T><<<grid, block, 0, stream>>>((T**) d_logit_ptrs, d_mask_offsets, batch_size, n_vocab,         \
+        mask_stride, temperatures, ln_min_ps, m, mask_fractions)
 
     switch (tp)
     {

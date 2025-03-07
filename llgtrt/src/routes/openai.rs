@@ -165,6 +165,9 @@ pub struct CommonCreateParams {
     /// tokens comprising the top 10% probability mass are considered.
     #[serde(default = "default_top_p")]
     pub top_p: f32,
+    /// Filters out tokens with probability less than min_p multiplied by the probability of the most likely token
+    #[serde(default)]
+    pub min_p: f32,
     /// A unique identifier representing your end-user, which can help OpenAI to monitor and detect
     /// abuse.
     #[allow(dead_code)]
@@ -259,10 +262,15 @@ fn default_min_tokens() -> usize {
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct ContentPart {
-    #[serde(rename = "type")]
-    pub kind: String,
-    pub text: String,
+pub struct ImageUrl {
+    pub url: String,
+}
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ContentPart {
+    Text { text: String },
+    ImageUrl { image_url: ImageUrl },
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]

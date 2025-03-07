@@ -1,10 +1,10 @@
 [package]
 name = "llgtrt"
-version = "0.16.1"
+version = "0.16.6"
 edition = "2021"
 
 [dependencies]
-axum = { version = "0.7" }
+axum = { version = "0.7", features = ["macros"] }
 tokio = { version = "1.33.0", features = ["full"] }
 async-stream = "0.3.5"
 anyhow = { version = "1.0.75", features = ["backtrace"] }
@@ -27,3 +27,5 @@ json5 = "0.4.1"
 minijinja-contrib = { version = "2.3.1", features = ["pycompat"] }
 safetensors = "0.5.2"
 memmap2 = "0.9.5"
+pyo3 = { version = "0.23.4", features = ["anyhow", "serde"] }
+num-traits = "0.2.19"

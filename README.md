@@ -17,6 +17,56 @@ There is no significant startup cost for all realistic sizes of grammars (no mea
 
 This approach differs from [Outlines](https://github.com/dottxt-ai/outlines) and [XGrammar](https://github.com/mlc-ai/xgrammar) (which both pre-compute masks, resulting in a startup cost and limits on schema complexity) and is more similar in spirit to [llama.cpp grammars](https://github.com/ggerganov/llama.cpp/blob/master/grammars/README.md), though it is much faster due to the use of a custom lexer with [derivative-based regexes](https://github.com/microsoft/derivre), an Earley parser, and a [highly optimized](https://github.com/guidance-ai/llguidance/blob/main/docs/optimizations.md) token prefix tree.
 
+### Lark grammars
+
+Llgtrt follows OpenAI API when `response_format` is set to `json_object` or `json_schema` 
+(including handling of `strict` field in the schema).
+
+For more flexible constraints, `response_format` can be set to `lark_grammar`.
+For example, you can `POST` to `/v1/chat/completions`:
+
+```json
+{ "model": "model", 
+  "messages": [
+    { "role": "user",
+      "content": "Please tell me a one line joke."
+    } ],
+  "response_format": {
+    "type": "lark_grammar",
+    "lark_grammar": "start: /[A-Z ]+/"
+  },
+  "max_tokens": 100
+}
+```
+
+This results in a (bad) joke in uppercase.
+
+Another example involves reasoning models distilled from Deepseek-R1
+(the chat format in these models seems to already include `<think>\n`,
+so it should not be part of the grammar):
+
+```json
+{ "model": "model", "messages": [
+    { "role": "user",
+      "content": "How many 'r' in strawberry?"
+    } ],
+  "response_format": {
+    "type": "lark_grammar",
+    "lark_grammar": "start: /(.|\\n){1000,2000}/ </think> \"\\\\boxed{\" /[0-9]+/ \"}\""
+  },
+  "max_tokens": 1000
+}
+```
+
+The `"lark_grammar"` is JSON-encoded version of 
+`start: /(.|\n){1000,2000}/ </think> "\\boxed{" /[0-9]+/ "}"`.
+Of course you can also use `{0,2000}` to only place upper bound on thinking,
+`{1000,}` to place lower bound, or `*` to avoid any bounds.
+
+You can [convert GBNF](https://github.com/guidance-ai/llguidance/blob/main/python/llguidance/gbnf_to_lark.py) grammars to Lark syntax, as it's strictly more expressive.
+Learn more in [llguidance docs](https://github.com/guidance-ai/llguidance/blob/main/docs/syntax.md).
+
+
 ## Requirements
 
 You will need a Linux machine with an NVIDIA GPU and Docker set up to use the `nvidia-docker` runtime.
@@ -48,6 +98,17 @@ To build a container, use:
 
 The build script will initialize submodules if they are missing. It takes about 15 minutes on a GitHub runner and should typically be faster on a local machine.
 
+#### Optional: Building TensorRT-LLM from source
+
+The build process above uses prebuilt binaries from a release version of TensorRT-LLM.  It is also possible to build your own version of TensorRT-LLM from source and create a build of llgtrt based on that.  This can be used to build a version of llgtrt that will work with versions of TensorRT-LLM newer than the released versions in nVidia's repositories.
+
+To do so, first build TensorRT-LLM from source following the instructions in https://nvidia.github.io/TensorRT-LLM/installation/build-from-source-linux.html
+
+Now, build llgtrt based on the Docker image you built above
+```bash
+./docker/build.sh --trtllm tensorrt_llm/release
+```
+
 ### Building the TensorRT-LLM Engine
 
 This is based on the [TensorRT-LLM Quick-start](https://nvidia.github.io/TensorRT-LLM/quick-start-guide.html).
@@ -78,9 +139,9 @@ trtllm-build --checkpoint_dir /models/model-ckpt \
 # Clean up checkpoint (optional)
 rm -rf /models/model-ckpt
 
-# Finally, copy tokenizer.json and tokenizer_config.json
-cp /models/Meta-Llama-3.1-8B-Instruct/tokenizer.json /models/model-engine
-cp /models/Meta-Llama-3.1-8B-Instruct/tokenizer_config.json /models/model-engine
+# Finally, copy tokenizer and preprocessor files to engine folder
+cp /models/Meta-Llama-3.1-8B-Instruct/tokenizer*.json /models/model-engine
+cp /models/Meta-Llama-3.1-8B-Instruct/preprocessor*.json /models/model-engine # this may be missing
 
 # Exit the container
 exit

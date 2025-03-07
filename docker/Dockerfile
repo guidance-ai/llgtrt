@@ -1,4 +1,16 @@
-FROM nvcr.io/nvidia/tensorrt:24.12-py3 AS llgtrt_dev
+# This argument allows you to override the base image with your own custom build of TensorRT or TensorRT-LLM
+ARG BASE_IMAGE=nvcr.io/nvidia/tensorrt:24.12-py3
+
+# Set this to false if your image already includes TensorRT-LLM
+ARG INSTALL_TRTLLM=true
+
+# Set this to 1 to enable the CXX11_ABI during native builds
+ARG USE_CXX11_ABI=0
+
+FROM ${BASE_IMAGE} AS llgtrt_dev
+
+ARG INSTALL_TRTLLM
+ARG USE_CXX11_ABI
 
 RUN apt-get update
 RUN DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
@@ -33,14 +45,18 @@ COPY TensorRT-LLM/examples/llama/requirements.txt /tmp/reqs/
 # COPY TensorRT-LLM/docker/common/install_mpi4py.sh /tmp/reqs/
 # COPY TensorRT-LLM/docker/common/install_tensorrt.sh /tmp/reqs/
 
-# RUN bash /tmp/reqs/install_mpi4py.sh
-# RUN bash /tmp/reqs/install_tensorrt.sh
+#RUN bash /tmp/reqs/install_mpi4py.sh
+#RUN bash /tmp/reqs/install_tensorrt.sh
 
-RUN cd /tmp/reqs && \
-    pip install \
-        --extra-index-url https://pypi.nvidia.com/ \
-        --upgrade -r requirements.txt && \
-    rm -rf /root/.cache/pip
+# Install tensorrt_llm and its backing c++ libraries from pip unless disabled
+RUN echo "INSTALL_TRTLLM is set to: ${INSTALL_TRTLLM}" && \
+    if [ "${INSTALL_TRTLLM}" = "true" ]; then \
+        cd /tmp/reqs && \
+        pip install \
+            --extra-index-url https://pypi.nvidia.com/ \
+            --upgrade -r requirements.txt && \
+        rm -rf /root/.cache/pip; \
+    fi
 
 # more packages for this image
 RUN pip install \
@@ -51,7 +67,11 @@ RUN pip install \
  pip uninstall -y guidance && \
  rm -rf /root/.cache/pip
 
-# RUN pip install --upgrade transformers
+RUN pip install --upgrade transformers
+
+# TODO test this
+# RUN pip install flash-attn --no-build-isolation
+# RUN pip install qwen_vl_utils
 
 RUN cd /usr/local/lib/python3.12/dist-packages/tensorrt_llm/libs/ && \
     ln -s libnvinfer_plugin_tensorrt_llm.so libnvinfer_plugin_tensorrt_llm.so.10
@@ -71,7 +91,8 @@ COPY . .
 
 # link stub, so that it builds without nvidia-runtime
 RUN cd /usr/local/cuda/lib64 && ln -s stubs/libnvidia-ml.so libnvidia-ml.so.1
-RUN ./scripts/build.sh --clean
+RUN bash -c 'env'
+RUN ./scripts/build.sh --clean --cxx11abi $USE_CXX11_ABI
 # remove stub just in case
 RUN rm /usr/local/cuda/lib64/libnvidia-ml.so.1
 

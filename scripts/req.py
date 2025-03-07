@@ -161,7 +161,7 @@ def send_one(data):
     return response
 
 
-def send_one_stream(data: dict) -> list[Results]:
+def send_one_stream(data: dict, cb = None) -> list[Results]:
     t0 = time.monotonic()
     path = "chat/completions"
     is_run = False
@@ -208,12 +208,15 @@ def send_one_stream(data: dict) -> list[Results]:
 
             res.usage = data["usage"]
             if is_run:
-                res.text_chunks.append(data["forks"][0]["text"])
-                res.logs += data["forks"][0]["logs"]
+                text = data["forks"][0]["text"]
+                logs = data["forks"][0]["logs"]
                 res.error = data["forks"][0].get("error", "")
             else:
-                res.text_chunks.append(data["choices"][0]["delta"]["content"])
-                res.logs += data["choices"][0].get("llg_logs", "")
+                text = data["choices"][0]["delta"]["content"]
+                logs = data["choices"][0].get("llg_logs", "")
+            res.text_chunks.append(text)
+            res.logs += logs
+            if cb: cb(text, logs)
     for res in results:
         res.finalize()
     responses.extend(results)

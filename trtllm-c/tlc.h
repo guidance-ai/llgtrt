@@ -14,6 +14,21 @@ extern "C"
     typedef uint64_t TlcClientId;
     typedef char* TlcStatus;
 
+    // these match nvinfer1::DataType
+    typedef enum
+    {
+        TLC_DT_F32 = 0,
+        TLC_DT_F16 = 1,
+        TLC_DT_I8 = 2,
+        TLC_DT_I32 = 3,
+        TLC_DT_BOOL = 4,
+        TLC_DT_U8 = 5,
+        TLC_DT_F8 = 6,
+        TLC_DT_BF16 = 7,
+        TLC_DT_I64 = 8,
+        TLC_DT_I4 = 9,
+    } TlcDataType;
+
     typedef struct
     {
         TlcReqId _req_id;
@@ -23,6 +38,8 @@ extern "C"
         uint32_t _num_tokens;
         // set by the callback (initially 1.0)
         float temperature;
+        // set by the callback (initially -FLT_MAX)
+        float ln_min_p;
         // set by the callback (initially NULL)
         uint32_t* out_mask_pointer;
     } TlcLogitsEntry;
@@ -69,6 +86,14 @@ extern "C"
         size_t kv_cache_host_memory_bytes;
         // defaults to true
         bool kv_cache_onboard_blocks;
+
+        // defaults to none (which is 0.5)
+        float cross_kv_cache_fraction;
+        // defaults to none
+        int32_t secondary_offload_min_priority;
+        // defaults to 0
+        size_t event_buffer_max_size;
+
         // defaults to 0 (disabled)
         int32_t max_attention_window_size;
         // when set to 0, use default
@@ -88,19 +113,24 @@ extern "C"
         TlcEngineParams engine_params;
     } TlcInitParams;
 
+#define TLC_MAX_SHAPE 8
+
     // TensorRT tensor class support
-    typedef struct {
-        const int64_t* dims_ptr;
+    typedef struct
+    {
+        int64_t dims[TLC_MAX_SHAPE];
         size_t num_dims;
     } TlcShape;
 
-    typedef struct {
-        int32_t data_type;
-        const void *data_ptr;
+    typedef struct
+    {
+        TlcDataType data_type;
+        void const* data_ptr;
         TlcShape shape;
     } TlcTensor;
 
-    typedef struct {
+    typedef struct
+    {
         uint64_t lora_id;
         TlcTensor weights;
         TlcTensor config;
@@ -116,6 +146,7 @@ extern "C"
         uint32_t eos_token_id;
         float temperature;
         float top_p;
+        float min_p;
         float frequency_penalty;
         float presence_penalty;
         float priority;
@@ -126,11 +157,31 @@ extern "C"
 
     typedef struct
     {
+        // PromptTuningConfig
+        TlcTensor prompt_table;
+        TlcTensor input_token_extra_ids; // vec<u64>
+
+        // MropeConfig
+        TlcTensor mrope_rotary_sin_cos;
+        int32_t mrope_position_deltas;
+
+        TlcTensor skip_cross_attn_blocks;
+
+        TlcTensor encoder_input_features;
+        int32_t encoder_output_length;
+        TlcTensor cross_attention_masks;
+
+        TlcTensor input_position_ids; // vec<u32>
+    } TlcPromptParams;
+
+    typedef struct
+    {
         int32_t* tokens;
         uint32_t num_tokens;
         TlcClientId client_req_id;
         TlcRequestParams params;
         TlcLoraParams lora_params;
+        TlcPromptParams prompt_params;
     } TlcRequest;
 
     /// @brief The reason why the model stopped generating tokens for a request.

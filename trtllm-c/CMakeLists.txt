@@ -7,7 +7,7 @@ set(TRTLLM_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../TensorRT-LLM")
 set(TRTLLM_INCLUDE_DIR "${TRTLLM_DIR}/cpp/include")
 set(TRTLLM_INCLUDE_COMMON_DIR "${TRTLLM_DIR}/cpp")
 
-set(USE_CXX11_ABI 0)
+option(USE_CXX11_ABI "Enable CXX11 ABI" 0)
 message(STATUS "Use CXX11 ABI: ${USE_CXX11_ABI}")
 add_compile_options("-D_GLIBCXX_USE_CXX11_ABI=${USE_CXX11_ABI}")
 

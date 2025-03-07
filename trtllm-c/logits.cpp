@@ -1,3 +1,4 @@
+#include <cfloat>
 #include <stdexcept>
 #include <string>
 #include <cmath>
@@ -34,7 +35,7 @@ void* tlc_alloc_logit_data(int32_t mask_stride_, int32_t max_batch_size_)
     assert(max_batch_size > 0);
     assert(mask_stride % 4 == 0);
 
-    size_t hd_size = max_batch_size * sizeof(int64_t) * 4;
+    size_t hd_size = max_batch_size * sizeof(int64_t) * 5;
     size_t sz2 = hd_size + max_batch_size * mask_stride;
     masks_size = sz2;
     if (cudaHostAlloc(&masksData, sz2, cudaHostAllocDefault))
@@ -46,7 +47,7 @@ void* tlc_alloc_logit_data(int32_t mask_stride_, int32_t max_batch_size_)
 
 float* tlc_mask_fraction_ptr()
 {
-    return (float*) ((uint8_t*) masksData + max_batch_size * sizeof(int64_t) * 3);
+    return (float*) ((uint8_t*) masksData + max_batch_size * sizeof(int64_t) * 4);
 }
 
 #define MAX_BATCH_SIZE 128
@@ -82,7 +83,7 @@ static std::string shapeToString(tle::Shape const& shape)
     if (!(x))                                                                                                          \
     {                                                                                                                  \
         TLLM_LOG_ERROR("CHECK failed: %s", #x);                                                                        \
-        return;                                                                                                        \
+        abort();                                                                                                       \
     }
 
 static void logitsPostProcessorFn(std::vector<tle::IdType> const& reqIds, std::vector<tle::Tensor>& logits,
@@ -109,6 +110,7 @@ static void logitsPostProcessorFn(std::vector<tle::IdType> const& reqIds, std::v
         entry._num_tokens = tokens[i].get()[0].size();
         entry.out_mask_pointer = nullptr;
         entry.temperature = 1.0f;
+        entry.ln_min_p = -FLT_MAX;
         entries.push_back(entry);
 
         // auto shape = logits[i].getShape();
@@ -130,8 +132,10 @@ static void logitsPostProcessorFn(std::vector<tle::IdType> const& reqIds, std::v
     int64_t* logitPtrs = (int64_t*) masksData;
     int64_t* masksOffsets = logitPtrs + batchSize;
     float* temperatures = (float*) (logitPtrs + 2 * batchSize);
+    float* lnMinPs = (float*) (logitPtrs + 3 * batchSize);
 
     int64_t temperatures_offset = (uint8_t*) temperatures - (uint8_t*) masksData;
+    int64_t ln_min_p_offset = (uint8_t*) lnMinPs - (uint8_t*) masksData;
     int64_t mask_fractions_offset = (uint8_t*) tlc_mask_fraction_ptr() - (uint8_t*) masksData;
 
     int64_t* cudaLogitPtrs = (int64_t*) cudaMasksData;
@@ -158,7 +162,13 @@ static void logitsPostProcessorFn(std::vector<tle::IdType> const& reqIds, std::v
         if (nVocab == 0)
         {
             nVocab = shape[2];
-            CHECK((nVocab + 31) / 32 * 4 <= mask_stride);
+
+            if ((nVocab + 31) / 32 * 4 > mask_stride)
+            {
+                TLLM_LOG_ERROR("nVocab=%d; mask_stride allows for only %d", nVocab, mask_stride * 8);
+                TLLM_LOG_INFO("try adding { ... tokenizer: { n_vocab_override: %d } ... } to llgtrt.json5", nVocab);
+                abort();
+            }
         }
         else
         {
@@ -187,6 +197,8 @@ static void logitsPostProcessorFn(std::vector<tle::IdType> const& reqIds, std::v
 
         masksOffsets[dp] = mask_offset;
         temperatures[dp] = entries[i].temperature;
+        lnMinPs[dp] = entries[i].ln_min_p;
+
 
         if (mask_offset > max_offset)
             max_offset = mask_offset;
@@ -201,8 +213,8 @@ static void logitsPostProcessorFn(std::vector<tle::IdType> const& reqIds, std::v
     if (dp > 0)
     {
         cudaMemcpyAsync(cudaMasksData, masksData, max_offset + mask_stride, cudaMemcpyHostToDevice, stream);
-        mask_logits_ext(cudaLogitPtrs, cudaMasksOffsets, mask_fractions_offset, temperatures_offset, dp, nVocab,
-            mask_stride / 4, tp, stream);
+        mask_logits_ext(cudaLogitPtrs, cudaMasksOffsets, mask_fractions_offset, temperatures_offset, ln_min_p_offset,
+            dp, nVocab, mask_stride / 4, tp, stream);
         cudaMemcpyAsync((uint8_t*) masksData + mask_fractions_offset, (uint8_t*) cudaMasksData + mask_fractions_offset,
             dp * sizeof(float), cudaMemcpyDeviceToHost, stream);
 

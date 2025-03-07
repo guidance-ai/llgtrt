@@ -7,7 +7,7 @@ use std::{
     fmt::Display,
     panic::{self, AssertUnwindSafe},
     ptr,
-    sync::{Mutex, MutexGuard},
+    sync::{Arc, Mutex, MutexGuard},
 };
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use toktrie::{SimpleVob, TokEnv};
@@ -19,6 +19,7 @@ use trtllm_rs::{
 use crate::{
     chat::ChatBuilder,
     config::{CliConfig, LlgTrtConfig},
+    py::PyPromptParams,
     routes::openai::FinishReason,
     tokenizer::setup_tokenizer,
 };
@@ -62,8 +63,11 @@ struct ReqData {
     // it seems to create them one by one
     // this array keeps track of assignment of req_id to llg state
     llg_infos: Vec<ConstraintInfo>,
+    min_p: f32,
     prompt_len: usize,
     is_run: bool,
+    // this needs to be here, so the tensor memory passed to trtllm is not dropped
+    _prompt_params: Option<Arc<PyPromptParams>>,
 }
 
 impl Display for ReqData {
@@ -90,6 +94,7 @@ struct PendingSeq {
     prompt_len: usize,
     is_run: bool,
     entry: TlcLogitsEntry,
+    min_p: f32,
     stop: bool,
     // setting this will stop the sequence with given error
     error: Option<String>,
@@ -145,6 +150,11 @@ impl PendingSeq {
         let mask = step_res.sample_mask.as_ref().expect("No mask");
         self.entry.out_mask_pointer = copy_mask(mask);
         self.entry.temperature = llg.temperature;
+        self.entry.ln_min_p = if self.min_p > 0.0 {
+            self.min_p.ln()
+        } else {
+            -f32::MAX
+        };
 
         Ok(())
     }
@@ -160,6 +170,7 @@ impl PendingSeq {
             prompt_len: rd.prompt_len,
             entry: entry.clone(),
             stop: false,
+            min_p: rd.min_p,
             error: None,
             is_run: rd.is_run,
         }
@@ -276,6 +287,7 @@ extern "C" fn logits_processor(logits: *mut TlcLogitsEntry, num_logits: u32) {
             let entry = &mut entries[ps.entry_idx];
             entry.out_mask_pointer = ps.entry.out_mask_pointer;
             entry.temperature = ps.entry.temperature;
+            entry.ln_min_p = ps.entry.ln_min_p;
             let mut llg = ps.llg;
             if let Some(rd) = exec.req_data.get_mut(&entry.client_req_id()) {
                 if rd.logs.is_empty() {
@@ -314,7 +326,7 @@ impl AsyncExecutor {
     pub fn set_global(executor: AsyncExecutor) {
         unsafe {
             if GLOBAL_EXECUTOR.is_null() {
-                let mask_allocator = MaskAllocator::new(executor.n_vocab, executor.max_batch_size);
+                let mask_allocator = MaskAllocator::new(executor.n_vocab, executor.max_batch_size + 1);
                 GLOBAL_ALLOCATOR = Box::leak(Box::new(mask_allocator));
                 GLOBAL_EXECUTOR = Box::leak(Box::new(Mutex::new(executor)));
             } else {
@@ -426,6 +438,7 @@ impl AsyncExecutor {
     pub fn add_request(
         &mut self,
         init: &RequestInit,
+        prompt_params: Option<Arc<PyPromptParams>>,
         llgs: Vec<Box<Constraint>>,
     ) -> Result<(ReqId, UnboundedReceiver<StepResults>)> {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
@@ -436,9 +449,10 @@ impl AsyncExecutor {
         let prompt_len = init.tokens.len();
         let is_run = init.is_run;
 
-        // we're locked here, so it's safe to insert only after enqueuing
-        let req_id = self.executor.enqueue_request(init)?;
+        let pp = prompt_params.as_ref().map(|p| &p.tlc_prompt_params);
 
+        // we're locked here, so it's safe to insert only after enqueuing
+        let req_id = self.executor.enqueue_request(init, pp)?;
         self.req_data.insert(
             client_req_id,
             ReqData {
@@ -448,8 +462,10 @@ impl AsyncExecutor {
                 llgs: llgs.into_iter().map(Some).collect(),
                 llg_infos: vec![],
                 prompt_len,
+                min_p: init.params.min_p,
                 logs: String::new(),
                 is_run,
+                _prompt_params: prompt_params,
             },
         );
         self.req_to_client.insert(req_id, client_req_id);

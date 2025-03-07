@@ -16,9 +16,9 @@ exclude = [
 resolver = "2"
 
 [profile.release]
-# debug = 1
+debug = 1
 
-[patch.'https://github.com/microsoft/derivre']
+[patch.crates-io]
 derivre = { path = "derivre" }
 
 [workspace.dependencies]
