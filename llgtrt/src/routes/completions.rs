@@ -10,7 +10,7 @@ use axum::Json;
 use core::panic;
 use futures_core::Stream;
 use llguidance::api::{GrammarWithLexer, TopLevelGrammar};
-use llguidance::{lark_to_llguidance, Constraint, JsonCompileOptions};
+use llguidance::Constraint;
 use safetensors::Dtype;
 use serde_json::{json, Value};
 use std::fmt::Display;
@@ -300,14 +300,12 @@ fn llg_grammar(params: &CommonCreateParams) -> Result<Option<TopLevelGrammar>> {
         }
         Some(ResponseFormat::LarkGrammar { lark_grammar }) => {
             log::debug!("using Lark grammar");
-            lark_to_llguidance(lark_grammar)?
+            TopLevelGrammar::from_lark(lark_grammar.clone())
         }
         _ => {
             if params.min_p > 0.0 {
                 // Returning a Dummy-grammar to enforce logit processing when min_p is set
-                let grm = TopLevelGrammar::from_regex(llguidance::api::RegexNode::Regex(
-                    r"(\n|.)*".to_string(),
-                ));
+                let grm = TopLevelGrammar::from_regex(r"(\n|.)*");
                 return Ok(Some(grm));
             }
             return Ok(None);
@@ -675,9 +673,7 @@ pub async fn route_chat_completions(
 }
 
 fn json_to_llg(schema: Value) -> Result<TopLevelGrammar> {
-    let opts = JsonCompileOptions::default();
-    opts.json_to_llg(schema)
-        .map_err(|e| anyhow!("error compiling JSON schema to LLG: {}", e))
+    Ok(TopLevelGrammar::from_json_schema(schema))
 }
 
 fn valid_utf8_len(data: &Vec<u8>) -> usize {

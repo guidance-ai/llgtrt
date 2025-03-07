@@ -1400,7 +1400,7 @@ dependencies = [
 
 [[package]]
 name = "llguidance"
-version = "0.6.30"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "derivre",
@@ -1419,7 +1419,7 @@ dependencies = [
 
 [[package]]
 name = "llguidance_py"
-version = "0.6.30"
+version = "0.7.0"
 dependencies = [
  "bytemuck",
  "llguidance",
@@ -2656,7 +2656,7 @@ dependencies = [
 
 [[package]]
 name = "toktrie"
-version = "0.6.30"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -2667,7 +2667,7 @@ dependencies = [
 
 [[package]]
 name = "toktrie_hf_tokenizers"
-version = "0.6.30"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "log",
