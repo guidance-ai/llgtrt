@@ -31,12 +31,14 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Set the default base image if --trtllm was not provided
-if [[ -z "$BASE_IMAGE" ]]; then
-    BASE_IMAGE="nvcr.io/nvidia/tensorrt:24.12-py3"
-fi
+DOCKER_BUILD_ARGS="--progress=plain --build-arg INSTALL_TRTLLM=$INSTALL_TRTLLM --build-arg USE_CXX11_ABI=$USE_CXX11_ABI"
 
-DOCKER_BUILD_ARGS="--progress=plain --build-arg BASE_IMAGE=$BASE_IMAGE --build-arg INSTALL_TRTLLM=$INSTALL_TRTLLM --build-arg USE_CXX11_ABI=$USE_CXX11_ABI"
+# Only override BASE_IMAGE if --trtllm is specified
+if [[ -z "$BASE_IMAGE" ]]; then
+    :
+else
+    DOCKER_BUILD_ARGS="$DOCKER_BUILD_ARGS --build-arg BASE_IMAGE=$BASE_IMAGE"
+fi
 
 function run_docker_build {
     echo "Building Docker image with arguments: $DOCKER_BUILD_ARGS $@"

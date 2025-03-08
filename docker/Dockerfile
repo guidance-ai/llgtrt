@@ -1,5 +1,5 @@
 # This argument allows you to override the base image with your own custom build of TensorRT or TensorRT-LLM
-ARG BASE_IMAGE=nvcr.io/nvidia/tensorrt:24.12-py3
+ARG BASE_IMAGE=nvcr.io/nvidia/tensorrt:25.02-py3
 
 # Set this to false if your image already includes TensorRT-LLM
 ARG INSTALL_TRTLLM=true
@@ -40,6 +40,7 @@ RUN cargo install rustfilt
 RUN mkdir -p /tmp/reqs
 
 # if this fails, run 'git submodule update --init' first
+
 COPY TensorRT-LLM/examples/llama/requirements.txt /tmp/reqs/
 # COPY TensorRT-LLM/docker/common/install_mpi4py.sh /tmp/reqs/
 # COPY TensorRT-LLM/docker/common/install_tensorrt.sh /tmp/reqs/
@@ -50,7 +51,11 @@ COPY TensorRT-LLM/examples/llama/requirements.txt /tmp/reqs/
 # Install tensorrt_llm and its backing c++ libraries from pip unless disabled
 RUN echo "INSTALL_TRTLLM is set to: ${INSTALL_TRTLLM}" && \
     if [ "${INSTALL_TRTLLM}" = "true" ]; then \
-        cd /tmp/reqs && pip install --upgrade -r requirements.txt; \
+        cd /tmp/reqs && \
+        pip install \
+            --extra-index-url https://pypi.nvidia.com/ \
+            --upgrade -r requirements.txt && \
+        rm -rf /root/.cache/pip; \
     fi
 
 # more packages for this image
@@ -58,8 +63,9 @@ RUN pip install \
  torch transformers bitsandbytes \
  pytest ujson numpy requests mypy maturin[zig] \
  guidance huggingface_hub tokenizers jsonschema \
- pandas matplotlib plotly wheel
-RUN pip uninstall -y guidance
+ pandas matplotlib plotly wheel && \
+ pip uninstall -y guidance && \
+ rm -rf /root/.cache/pip
 
 RUN pip install --upgrade transformers
 
