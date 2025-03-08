@@ -1,5 +1,5 @@
 # This argument allows you to override the base image with your own custom build of TensorRT or TensorRT-LLM
-ARG BASE_IMAGE=nvcr.io/nvidia/tensorrt:24.12-py3
+ARG BASE_IMAGE=nvcr.io/nvidia/tensorrt:25.02-py3
 
 # Set this to false if your image already includes TensorRT-LLM
 ARG INSTALL_TRTLLM=true
