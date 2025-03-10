@@ -201,10 +201,12 @@ impl ChatCompletionMessageParams {
                 content,
                 name,
                 tool_calls,
+                refusal,
             } => ChatCompletionMessageParams::Assistant {
                 content: content.as_ref().map(|x| x.flatten()).transpose()?,
                 name: name.clone(),
                 tool_calls: tool_calls.clone(),
+                refusal: refusal.clone(),
             },
             ChatCompletionMessageParams::Tool {
                 content,
