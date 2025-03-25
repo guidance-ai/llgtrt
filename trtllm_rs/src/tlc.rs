@@ -17,6 +17,7 @@ pub type TokenId = u32;
 #[derive(Debug, Clone, Default)]
 pub struct ExecutorInit {
     pub engine_path: String,
+    pub draft_engine_path: Option<String>,
     pub logits_callback: ffi::TlcLogitsPostProcessor,
     pub trt_params: ffi::TlcEngineParams,
 }
@@ -145,6 +146,7 @@ pub struct RequestInit {
     pub is_run: bool,
     pub params: RequestParams,
     pub lora_params: Option<LoraParams>,
+    pub draft_model_param: Option<DraftParams>  // logits, tokens, acceptance ratio
 }
 
 unsafe impl Send for ffi::TlcPromptParams {}

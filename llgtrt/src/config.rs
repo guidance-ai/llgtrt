@@ -158,6 +158,14 @@ pub struct CliConfig {
     #[arg(long, short = 'T')]
     pub tokenizer: Option<String>,
 
+    /// Path to a compiled TensorRT-LLM draft engine
+    #[arg(long)]
+    pub draft_engine: Option<String>,
+
+    /// Path to folder with HF tokenizer.json and tokenizer_config.json files for draft engine; defaults to ---draft-engine
+    #[arg(long)]
+    pub draft_tokenizer: Option<String>,
+
     /// Debug output
     #[arg(long, short = 'd')]
     pub debug: bool,

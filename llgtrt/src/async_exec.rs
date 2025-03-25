@@ -78,6 +78,7 @@ impl Display for ReqData {
 
 pub struct AsyncExecutor {
     executor: Executor,
+    draft_executor: Option<Executor>,
     n_vocab: usize,
     max_batch_size: usize,
     req_to_client: HashMap<ReqId, ClientReqId>,
@@ -368,11 +369,21 @@ impl AsyncExecutor {
         cli_config: &CliConfig,
         config: &LlgTrtConfig,
         mut executor_init: ExecutorInit,
+        mut draft_executor_init: Option<ExecutorInit>,
     ) -> Result<(Self, TokEnv, ChatBuilder)> {
         executor_init.logits_callback = Some(logits_processor);
-        let max_batch_size = executor_init.trt_params.max_batch_size as usize;
+        let mut max_batch_size = executor_init.trt_params.max_batch_size as usize;
         log::info!("new executor: max_batch_size={max_batch_size}");
         let (executor, mut responder) = Executor::new(executor_init)?;
+
+        let (draft_executor, mut draft_responder) = if draft_executor_init.is_some() {
+            draft_executor_init.logits_callback = Some(logits_processor);
+            max_batch_size = draft_executor_init.trt_params.max_batch_size as usize;
+            log::info!("new draft executor: max_batch_size={max_batch_size}");
+            Executor::new(draft_executor_init)?
+        } else {
+            (None, None)
+        };
 
         // on non-0 ranks, this will just wait until the rank 0 exits and then exit the process
         executor.check_mpi();
@@ -384,11 +395,14 @@ impl AsyncExecutor {
 
         let res = Self {
             executor,
+            draft_executor,
             req_data: HashMap::new(),
             req_to_client: HashMap::new(),
             n_vocab,
             max_batch_size,
         };
+
+        // TODO idk what this does rn, need to setup with draft_responder?
         rayon::spawn(move || loop {
             let resps = responder
                 .await_responses(std::time::Duration::from_millis(1))
@@ -452,6 +466,16 @@ impl AsyncExecutor {
         let pp = prompt_params.as_ref().map(|p| &p.tlc_prompt_params);
 
         // we're locked here, so it's safe to insert only after enqueuing
+        if self.draft_executor.is_some() {
+            // TODO do we need to pass prompt params in here? think yes?
+            let mut draft_init = init.clone();
+            draft_init.params.max_completion_tokens = 100;  // TODO how to set this?
+            let req_id = self.draft_executor.enqueue_request(draft_init, pp)?;
+
+            // TODO copy draft logits to target request with setExternalDraftTokensConfig somehow
+            // request_init --> TlcRequest --> tle draftTokensConfig in tle, with request.setExternalDraftTokensConfig(draftTokensConfig)
+        }
+
         let req_id = self.executor.enqueue_request(init, pp)?;
         self.req_data.insert(
             client_req_id,

@@ -23,7 +23,7 @@
     catch (...)                                                                                                        \
     {                                                                                                                  \
         return strdup("Unknown exception.");                                                                           \
-    }                                                                                                                  \
+    }                                f                                                                                  \
     return nullptr
 
 namespace tle = tensorrt_llm::executor;
@@ -326,7 +326,7 @@ TlcStatus tlc_enqueue_request(TlcExecutor* ctx, TlcRequest const* request, TlcRe
             tle::LoraConfig loraConfig(lp.lora_id, weights, config);
             req.setLoraConfig(loraConfig);
         }
-
+        //  request.setExternalDraftTokensConfig
         std::vector<tle::Request> requests;
         requests.emplace_back(std::move(req));
         auto ids = ctx->executor.enqueueRequests(std::move(requests));
