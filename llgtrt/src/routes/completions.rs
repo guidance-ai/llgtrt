@@ -318,7 +318,7 @@ fn is_lora_cache_miss_error(err: &AppError) -> bool {
     let target_substring = "Please send LoRA weights with request";
     err.to_string().contains(target_substring)
 }
-
+ 
 fn build_request_init(
     tokens: Vec<u32>,
     req_params: RequestParams,
@@ -341,6 +341,7 @@ fn build_request_init(
         client_req_id,
         is_run,
         lora_params,
+        draft_model_params: None  // TODO fill out
     };
     Ok(request_init)
 }
@@ -412,7 +413,7 @@ async fn mk_req_info(
     log::debug!("{}", app_state.tok_env.tok_trie().tokens_dbg(&tokens));
 
     let eos_token = if is_chat {
-        app_state.tok_eos_chat
+        app_state.tok_eos_chatreq_input
     } else {
         app_state.tok_eos_completions
     };

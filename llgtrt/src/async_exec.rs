@@ -474,6 +474,7 @@ impl AsyncExecutor {
 
             // TODO copy draft logits to target request with setExternalDraftTokensConfig somehow
             // request_init --> TlcRequest --> tle draftTokensConfig in tle, with request.setExternalDraftTokensConfig(draftTokensConfig)
+            // TODO how to wait on draft model then target model
         }
 
         let req_id = self.executor.enqueue_request(init, pp)?;

@@ -139,6 +139,12 @@ pub struct LoraParams {
     pub config: Option<Tensor>,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct DraftParams {
+    pub tokens: Vec<u32>,  // TODO needs to match vec token
+    pub logits: Tensor,  // needs
+}
+
 #[derive(Debug, Clone)]
 pub struct RequestInit {
     pub tokens: Vec<TokenId>,
@@ -146,7 +152,7 @@ pub struct RequestInit {
     pub is_run: bool,
     pub params: RequestParams,
     pub lora_params: Option<LoraParams>,
-    pub draft_model_param: Option<DraftParams>  // logits, tokens, acceptance ratio
+    pub draft_model_params: Option<DraftParams>  // logits, tokens, acceptance ratio
 }
 
 unsafe impl Send for ffi::TlcPromptParams {}

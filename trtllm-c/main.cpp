@@ -238,6 +238,13 @@ TlcStatus tlc_enqueue_request(TlcExecutor* ctx, TlcRequest const* request, TlcRe
 
         tle::SamplingConfig samplingConfig;
 
+        // ** code from trtllm, need to map DraftParams to it below
+        // think target data types are tle::VecTokens tokens; tle::VecLogProbs logprobs;
+        // TODO how spec decoding called?
+        // tle::ExternalDraftTokensConfig draftTokensConfig(
+        //  std::move(draftTokens), logitsTensor, std::nullopt /* acceptance threshold */, runtimeOpts.fastLogits);
+        // request.setExternalDraftTokensConfig(draftTokensConfig);
+
         auto const& p = request->params;
         auto const& pp = request->prompt_params;
 
