@@ -365,6 +365,10 @@ impl AsyncExecutor {
         self.executor.cancel_request(req_id)
     }
 
+    pub fn has_draft_model(&self) -> bool {
+        self.draft_executor.is_some()
+    }
+
     pub fn new(
         cli_config: &CliConfig,
         config: &LlgTrtConfig,
@@ -395,7 +399,7 @@ impl AsyncExecutor {
 
         let res = Self {
             executor,
-            draft_executor,
+            draft_executor: Some(draft_executor),
             req_data: HashMap::new(),
             req_to_client: HashMap::new(),
             n_vocab,
@@ -449,8 +453,33 @@ impl AsyncExecutor {
         self.executor.can_enqueue_request()
     }
 
+    pub fn add_draft_request(
+        &mut self,
+        init: &RequestInit,
+        prompt_params: Option<Arc<PyPromptParams>>,
+        llgs: Vec<Box<Constraint>>,
+    ) -> Result<(ReqId, UnboundedReceiver<StepResults>)> {
+        debug_assert!(self.draft_executor.is_some());
+        self.add_request_to_executor(
+            self.draft_executor.expect("this should've been checked before calling this method"),
+            init,
+            prompt_params,
+            llgs
+        )
+    }
+
     pub fn add_request(
         &mut self,
+        init: &RequestInit,
+        prompt_params: Option<Arc<PyPromptParams>>,
+        llgs: Vec<Box<Constraint>>,
+    ) -> Result<(ReqId, UnboundedReceiver<StepResults>)> {
+        self.add_request_to_executor(self.executor, init, prompt_params, llgs)
+    }
+
+    fn add_request_to_executor(
+        &mut self,
+        executor: Executor,
         init: &RequestInit,
         prompt_params: Option<Arc<PyPromptParams>>,
         llgs: Vec<Box<Constraint>>,
@@ -464,18 +493,6 @@ impl AsyncExecutor {
         let is_run = init.is_run;
 
         let pp = prompt_params.as_ref().map(|p| &p.tlc_prompt_params);
-
-        // we're locked here, so it's safe to insert only after enqueuing
-        if self.draft_executor.is_some() {
-            // TODO do we need to pass prompt params in here? think yes?
-            let mut draft_init = init.clone();
-            draft_init.params.max_completion_tokens = 100;  // TODO how to set this?
-            let req_id = self.draft_executor.enqueue_request(draft_init, pp)?;
-
-            // TODO copy draft logits to target request with setExternalDraftTokensConfig somehow
-            // request_init --> TlcRequest --> tle draftTokensConfig in tle, with request.setExternalDraftTokensConfig(draftTokensConfig)
-            // TODO how to wait on draft model then target model
-        }
 
         let req_id = self.executor.enqueue_request(init, pp)?;
         self.req_data.insert(

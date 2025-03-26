@@ -19,7 +19,7 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc::UnboundedReceiver;
 use toktrie::TokEnv;
-use trtllm_rs::{ClientReqId, LoraParams, ReqId, RequestInit, RequestParams, Tensor, TlcDataType};
+use trtllm_rs::{ClientReqId, DraftParams, LoraParams, ReqId, RequestInit, RequestParams, Tensor, TlcDataType};
 use uuid::Uuid;
 
 use crate::async_exec::{map_finish_reason, AsyncExecutor, StepResults};
@@ -318,7 +318,7 @@ fn is_lora_cache_miss_error(err: &AppError) -> bool {
     let target_substring = "Please send LoRA weights with request";
     err.to_string().contains(target_substring)
 }
- 
+
 fn build_request_init(
     tokens: Vec<u32>,
     req_params: RequestParams,
@@ -495,6 +495,40 @@ async fn mk_req_info(
         load_lora_weights,
     )?;
     let prompt_tokens = req_init.tokens.len();
+
+    // TODO draft executor call
+    if AsyncExecutor::lock().has_draft_model() {
+        // TODO override  n draft tokens to execute
+        let (req_id, recv) = AsyncExecutor::lock().add_draft_request(
+            &req_init,
+            req_input.prompt_params.clone(),
+            llg.clone(),
+        )?;
+
+        let mut req_info = build_req_info(
+            req_id,
+            n_forks,
+            client_req_id,
+            cmpl_id.clone(),
+            &prompt,
+            prompt_tokens,
+            params,
+            &app_state.tok_env,
+            is_chat,
+            is_run,
+            recv,
+        )?;
+
+        // TODO proper error handling,
+        // TODO need to pass full req_info
+        // TODO this doesn't need return passed reqinfo
+        let log_probs: Vec<TopTokenLogProb>;
+        (req_info, log_probs) = gather_response_chunks(req_info).await?;
+        req_init.draft_model_params = Some(DraftParams {
+            tokens: todo!(),
+            logits: todo!()
+        });
+    }
 
     let (req_id, recv) = AsyncExecutor::lock().add_request(
         &req_init,
@@ -984,8 +1018,7 @@ async fn completions_stream(
     Ok(Sse::new(response_stream))
 }
 
-async fn completions(mut client: ReqInfo) -> Result<Json<Value>, AppError> {
-    let mut token = client.cancel_token();
+async fn gather_response_chunks(mut client: ReqInfo) -> Result<(ReqInfo, Vec<TopTokenLogProb>), Error> {
     let mut logprobs = vec![];
     while let Some(mut result) = client.recv.recv().await {
         log::trace!("infer response: {:?}", result.response);
@@ -1009,6 +1042,36 @@ async fn completions(mut client: ReqInfo) -> Result<Json<Value>, AppError> {
             break;
         }
     }
+
+    Ok((client, logprobs))
+}
+
+async fn completions(mut client: ReqInfo) -> Result<Json<Value>, AppError> {
+    let mut token = client.cancel_token();
+    // let mut logprobs = vec![];
+    (client, log_probs) = gather_response_chunks(client)?;
+    // while let Some(mut result) = client.recv.recv().await {
+    //     log::trace!("infer response: {:?}", result.response);
+    //     let response = &result.response;
+    //     if let Some(err) = &response.error {
+    //         let err = anyhow::anyhow!("{}", err);
+    //         log::error!("received error message (rest): {}", err);
+    //         let _ = AsyncExecutor::lock().cancel_request(client.req_id);
+    //         return Err(err.into());
+    //     } else {
+    //         client.usage.completion_tokens += response.tokens.len();
+    //         client.usage.total_tokens += response.tokens.len();
+    //         let r = client.update_text(&mut result, false);
+    //         if let Some(mut lp) = r.logprobs {
+    //             logprobs.append(&mut lp.content);
+    //         }
+    //     }
+
+    //     if client.all_forks_stopped() {
+    //         let _ = AsyncExecutor::lock().cancel_request(client.req_id);
+    //         break;
+    //     }
+    // }
 
     let created = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
     let id = format!("cmpl-{}", Uuid::new_v4());
