@@ -342,7 +342,7 @@ fn build_request_init(
         client_req_id,
         is_run,
         lora_params,
-        draft_model_params: None  // TODO fill out
+        draft_params: None  // TODO fill out
     };
     Ok(request_init)
 }
@@ -531,9 +531,9 @@ async fn mk_req_info(
             let log_probs: Vec<TopTokenLogProb>;
             (req_info, log_probs) = gather_response_chunks(req_info).await?;
             let (tokens, logits) = log_probs.iter().map(|top| (top.chosen.token, top.chosen.logprob)).unzip();
-            req_init.draft_model_params = Some(DraftParams {
-                tokens: tokens,
-                logits: logits
+            req_init.draft_params = Some(DraftParams {
+                draft_tokens: tokens,
+                logits_tensor: logits  // TODO init correctly
             });
 
             req_init.params.max_new_tokens = n_draft_tokens + 1;  // TODO double check this
