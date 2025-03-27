@@ -82,6 +82,7 @@ pub struct AsyncExecutor {
     max_batch_size: usize,
     req_to_client: HashMap<ReqId, ClientReqId>,
     req_data: HashMap<ClientReqId, ReqData>,
+    n_draft_tokens: u32,  // TODO prob better location for this, esp if dynamically setting between calls
 }
 
 static mut GLOBAL_ALLOCATOR: *const MaskAllocator = ptr::null();
@@ -368,6 +369,10 @@ impl AsyncExecutor {
         self.draft_executor.is_some()
     }
 
+    pub fn n_draft_tokens(&self) -> u32 {
+        self.n_draft_tokens
+    }
+
     pub fn new(
         cli_config: &CliConfig,
         config: &LlgTrtConfig,
@@ -452,7 +457,7 @@ impl AsyncExecutor {
         };
 
         rayon::spawn(receive_from_responder(responder)());
-        
+
         if Some(x) = draft_responder {
             rayon::spawn(receive_from_responder(x)());
         }
@@ -471,6 +476,7 @@ impl AsyncExecutor {
         llgs: Vec<Box<Constraint>>,
     ) -> Result<(ReqId, UnboundedReceiver<StepResults>)> {
         debug_assert!(self.draft_executor.is_some());
+        init.params.
         self.add_request_to_executor(
             self.draft_executor.expect("this should've been checked before calling this method"),
             init,

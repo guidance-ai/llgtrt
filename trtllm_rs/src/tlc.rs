@@ -17,7 +17,6 @@ pub type TokenId = u32;
 #[derive(Debug, Clone, Default)]
 pub struct ExecutorInit {
     pub engine_path: String,
-    pub draft_engine_path: Option<String>,
     pub logits_callback: ffi::TlcLogitsPostProcessor,
     pub trt_params: ffi::TlcEngineParams,
 }

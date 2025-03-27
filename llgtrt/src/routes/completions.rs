@@ -502,8 +502,9 @@ async fn mk_req_info(
         // TODO override  n draft tokens to execute
         let start_len = req_init.tokens.len();
         let n_gen_tokens = req_init.params.max_new_tokens;
-        let n_draft_tokens = 5; // TODO how long to do this
+        let n_draft_tokens = AsyncExecutor::lock(); // TODO how long to do this
         while req_init.tokens.len() < start_len + n_gen_tokens {
+            req_init.params.max_new_tokens = n_draft_toknes;  // TODO set min?
             let (req_id, recv) = AsyncExecutor::lock().add_draft_request(
                 &req_init,
                 req_input.prompt_params.clone(),  // TODO needed here?

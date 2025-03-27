@@ -82,6 +82,7 @@ impl Default for TrtLlmRuntimeConfig {
             cross_kv_cache_fraction: None,
             secondary_offload_min_priority: None,
             event_buffer_max_size: None,
+            n_draft_tokens: None
         }
     }
 }

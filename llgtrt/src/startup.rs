@@ -71,7 +71,7 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
     if cli_config.print_config {
         log::info!("Skipping tokenizer config load");
     } else {
-        // TODO target & draft have same token tokenizer? don't need to load separate? do sanity check for same tokenizer here?
+        // TODO target & draft must have same token tokenizer? do sanity check here?
         let tokenizer_folder = cli_config.tokenizer.as_ref().unwrap_or(&cli_config.engine);
         let tokenizer_config = format!("{}/tokenizer_config.json", tokenizer_folder);
         log::info!("Loading tokenizer config from {:?}", tokenizer_config);
@@ -207,6 +207,7 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
     if draft_exec_config.is_some() {
         // make sure this is set to if using draft model
         p.enable_kv_cache_reuse = True;
+        p.n_draft_tokens = Some(5)
     }
 
     log::info!("Initializing executor with config: {:?}", exec_config);
@@ -267,6 +268,7 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
     if state.py_state.enabled {
         log::info!("Skipping warmup due to python");
     } else {
+        // TODO draft executor warmup call here
         // warmup request
         log::info!("Warming up executor");
         let mut warmup_tokens =
@@ -282,7 +284,7 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
                 client_req_id: ClientReqId::new(1),
                 lora_params: None,
                 is_run: false,
-                draft_model_params: None  // TODO fill out
+                draft_params: None  // TODO fill out
             },
             None,
             vec![],
