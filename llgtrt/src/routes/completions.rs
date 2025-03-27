@@ -8,6 +8,7 @@ use axum::response::sse::{Event, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 use core::panic;
+use std::iter::zip;
 use futures_core::Stream;
 use llguidance::api::{GrammarWithLexer, TopLevelGrammar};
 use llguidance::Constraint;
@@ -485,7 +486,7 @@ async fn mk_req_info(
         LoadLoraWeightsOption::Always => true,
         LoadLoraWeightsOption::Never => false,
     };
-    let req_init = build_request_init(
+    let mut req_init = build_request_init(
         tokens.clone(),
         req_params.clone(),
         client_req_id,
@@ -499,13 +500,87 @@ async fn mk_req_info(
     // TODO draft executor call
     if AsyncExecutor::lock().has_draft_model() {
         // TODO override  n draft tokens to execute
-        let (req_id, recv) = AsyncExecutor::lock().add_draft_request(
+        let start_len = req_init.tokens.len();
+        let n_gen_tokens = req_init.params.max_new_tokens;
+        let n_draft_tokens = 5; // TODO how long to do this
+        while req_init.tokens.len() < start_len + n_gen_tokens {
+            let (req_id, recv) = AsyncExecutor::lock().add_draft_request(
+                &req_init,
+                req_input.prompt_params.clone(),  // TODO needed here?
+                llg.clone(),
+            )?;
+
+            let mut req_info = build_req_info(
+                req_id,
+                n_forks,
+                client_req_id,
+                cmpl_id.clone(),
+                &prompt,
+                prompt_tokens,
+                params,
+                &app_state.tok_env,
+                is_chat,
+                is_run,
+                recv,
+            )?;
+
+            // TODO proper error handling,
+            // TODO need to pass full req_info
+            // TODO this doesn't need return passed reqinfo
+            req_info.usage.completion_tokens = n_draft_tokens;
+            let log_probs: Vec<TopTokenLogProb>;
+            (req_info, log_probs) = gather_response_chunks(req_info).await?;
+            let (tokens, logits) = log_probs.iter().map(|top| (top.chosen.token, top.chosen.logprob)).unzip();
+            req_init.draft_model_params = Some(DraftParams {
+                tokens: tokens,
+                logits: logits
+            });
+
+            req_init.params.max_new_tokens = n_draft_tokens + 1;  // TODO double check this
+            (req_id, recv) = AsyncExecutor::lock().add_request(
+                &req_init,
+                req_input.prompt_params.clone(),
+                llg.clone()
+            )?;
+
+            req_info = build_req_info(
+                req_id,
+                n_forks,
+                client_req_id,
+                cmpl_id.clone(),
+                &prompt,
+                prompt_tokens,
+                params,
+                &app_state.tok_env,
+                is_chat,
+                is_run,
+                recv,
+            )?;
+
+            (req_info, log_probs) = gather_response_chunks(req_info).await?;
+            let (target_tokens, _) = log_probs.iter().map(|top| (top.chosen.token, top.chosen.logprob)).unzip();
+            // TODO double check gather_response_chunks return prompt tokens as well?
+            req_init = build_request_init(
+                req_init.tokens + target_tokens,
+                req_params.clone(),
+                client_req_id,
+                is_run,
+                &params,
+                app_state,
+                load_lora_weights,
+            )?;
+        }
+
+        // TODO if req_info has gotten all info should skip inner gather loop?
+        completions_stream_or_not(False, req_info).await
+    } else {
+        let (req_id, recv) = AsyncExecutor::lock().add_request(
             &req_init,
             req_input.prompt_params.clone(),
             llg.clone(),
         )?;
 
-        let mut req_info = build_req_info(
+        let info = build_req_info(
             req_id,
             n_forks,
             client_req_id,
@@ -519,85 +594,55 @@ async fn mk_req_info(
             recv,
         )?;
 
-        // TODO proper error handling,
-        // TODO need to pass full req_info
-        // TODO this doesn't need return passed reqinfo
-        let log_probs: Vec<TopTokenLogProb>;
-        (req_info, log_probs) = gather_response_chunks(req_info).await?;
-        req_init.draft_model_params = Some(DraftParams {
-            tokens: todo!(),
-            logits: todo!()
-        });
-    }
+        match completions_stream_or_not(params.stream, info).await {
+            Ok(r) => Ok(r),
+            Err(err) => {
+                if is_lora_cache_miss_error(&err) {
+                    log::warn!("LoRA cache miss: {}", err);
 
-    let (req_id, recv) = AsyncExecutor::lock().add_request(
-        &req_init,
-        req_input.prompt_params.clone(),
-        llg.clone(),
-    )?;
+                    // If necessary, retry with LoRA weights set
+                    if params.load_lora_weights == LoadLoraWeightsOption::Auto {
+                        log::info!("Retrying with LoRA weights set");
+                        let req_init = build_request_init(
+                            tokens.clone(),
+                            req_params.clone(),
+                            client_req_id,
+                            is_run,
+                            &params,
+                            app_state,
+                            true,
+                        )?;
+                        let prompt_tokens = req_init.tokens.len();
 
-    let info = build_req_info(
-        req_id,
-        n_forks,
-        client_req_id,
-        cmpl_id.clone(),
-        &prompt,
-        prompt_tokens,
-        params,
-        &app_state.tok_env,
-        is_chat,
-        is_run,
-        recv,
-    )?;
+                        let (req_id, recv) = AsyncExecutor::lock().add_request(
+                            &req_init,
+                            req_input.prompt_params.clone(),
+                            llg.clone(),
+                        )?;
 
-    match completions_stream_or_not(params.stream, info).await {
-        Ok(r) => Ok(r),
-        Err(err) => {
-            if is_lora_cache_miss_error(&err) {
-                log::warn!("LoRA cache miss: {}", err);
+                        let info = build_req_info(
+                            req_id,
+                            n_forks,
+                            client_req_id,
+                            cmpl_id.clone(),
+                            &prompt,
+                            prompt_tokens,
+                            params,
+                            &app_state.tok_env,
+                            is_chat,
+                            is_run,
+                            recv,
+                        )?;
 
-                // If necessary, retry with LoRA weights set
-                if params.load_lora_weights == LoadLoraWeightsOption::Auto {
-                    log::info!("Retrying with LoRA weights set");
-                    let req_init = build_request_init(
-                        tokens.clone(),
-                        req_params.clone(),
-                        client_req_id,
-                        is_run,
-                        &params,
-                        app_state,
-                        true,
-                    )?;
-                    let prompt_tokens = req_init.tokens.len();
-
-                    let (req_id, recv) = AsyncExecutor::lock().add_request(
-                        &req_init,
-                        req_input.prompt_params.clone(),
-                        llg.clone(),
-                    )?;
-
-                    let info = build_req_info(
-                        req_id,
-                        n_forks,
-                        client_req_id,
-                        cmpl_id.clone(),
-                        &prompt,
-                        prompt_tokens,
-                        params,
-                        &app_state.tok_env,
-                        is_chat,
-                        is_run,
-                        recv,
-                    )?;
-
-                    completions_stream_or_not(params.stream, info).await
+                        completions_stream_or_not(params.stream, info).await
+                    } else {
+                        Ok(AppError::from(anyhow!(
+                                "LoRA model {:?} was not in cache and load_lora_weights is set to never: {}", params.lora_model, err
+                            )).into_response())
+                    }
                 } else {
-                    Ok(AppError::from(anyhow!(
-                            "LoRA model {:?} was not in cache and load_lora_weights is set to never: {}", params.lora_model, err
-                        )).into_response())
+                    Ok(err.into_response())
                 }
-            } else {
-                Ok(err.into_response())
             }
         }
     }

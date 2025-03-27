@@ -12,8 +12,7 @@ use std::{
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use toktrie::{SimpleVob, TokEnv};
 use trtllm_rs::{
-    ClientReqId, Executor, ExecutorInit, MaskAllocator, ReqId, RequestInit, ResponseChunk,
-    TlcLogitsEntry,
+    ClientReqId, Executor, ExecutorInit, MaskAllocator, ReqId, RequestInit, Responder, ResponseChunk, TlcLogitsEntry
 };
 
 use crate::{
@@ -384,7 +383,8 @@ impl AsyncExecutor {
             draft_executor_init.logits_callback = Some(logits_processor);
             max_batch_size = draft_executor_init.trt_params.max_batch_size as usize;
             log::info!("new draft executor: max_batch_size={max_batch_size}");
-            Executor::new(draft_executor_init)?
+            let (executor, responder) = Executor::new(draft_executor_init)?;
+            (Some(executor), Some(responder))
         } else {
             (None, None)
         };
@@ -399,7 +399,7 @@ impl AsyncExecutor {
 
         let res = Self {
             executor,
-            draft_executor: Some(draft_executor),
+            draft_executor,
             req_data: HashMap::new(),
             req_to_client: HashMap::new(),
             n_vocab,
@@ -407,45 +407,56 @@ impl AsyncExecutor {
         };
 
         // TODO idk what this does rn, need to setup with draft_responder?
-        rayon::spawn(move || loop {
-            let resps = responder
-                .await_responses(std::time::Duration::from_millis(1))
-                .unwrap();
+        let receive_from_responder = |responder: Responder| -> FnOnce {
+            return || {
+                move || loop {
+                    let resps = responder
+                        .await_responses(std::time::Duration::from_millis(1))
+                        .unwrap();
 
-            if resps.len() == 0 {
-                continue;
-            }
-
-            let mut exec = AsyncExecutor::lock();
-            for resp in resps {
-                let req_id = resp.req_id;
-                if let Some(client_req_id) = exec.req_to_client.get(&req_id) {
-                    let client_req_id = *client_req_id;
-                    let rd = exec.req_data.get_mut(&client_req_id).unwrap();
-                    let is_req_final = resp.is_req_final;
-                    let idx = resp.sequence_idx as usize;
-
-                    let mut r = StepResults {
-                        response: resp,
-                        logs: std::mem::take(&mut rd.logs),
-                        final_llg: None,
-                    };
-                    if rd.llgs.len() > 0 && r.response.finish_reason.is_some() {
-                        r.final_llg = std::mem::take(&mut rd.llgs[idx]);
+                    if resps.len() == 0 {
+                        continue;
                     }
-                    if rd.tx.send(r).is_err() {
-                        log::warn!("connection dropped; req={}", req_id);
-                        let _ = exec.cancel_request(req_id);
-                    } else if is_req_final {
-                        // no more data coming from here
-                        exec.drop_request_data(req_id);
+
+                    let mut exec = AsyncExecutor::lock();
+                    for resp in resps {
+                        let req_id = resp.req_id;
+                        if let Some(client_req_id) = exec.req_to_client.get(&req_id) {
+                            let client_req_id = *client_req_id;
+                            let rd = exec.req_data.get_mut(&client_req_id).unwrap();
+                            let is_req_final = resp.is_req_final;
+                            let idx = resp.sequence_idx as usize;
+
+                            let mut r = StepResults {
+                                response: resp,
+                                logs: std::mem::take(&mut rd.logs),
+                                final_llg: None,
+                            };
+                            if rd.llgs.len() > 0 && r.response.finish_reason.is_some() {
+                                r.final_llg = std::mem::take(&mut rd.llgs[idx]);
+                            }
+                            if rd.tx.send(r).is_err() {
+                                log::warn!("connection dropped; req={}", req_id);
+                                let _ = exec.cancel_request(req_id);
+                            } else if is_req_final {
+                                // no more data coming from here
+                                exec.drop_request_data(req_id);
+                            }
+                        } else {
+                            log::warn!("Response for unknown request: {:?}", req_id);
+                            let _ = exec.executor.cancel_request(req_id);
+                        }
                     }
-                } else {
-                    log::warn!("Response for unknown request: {:?}", req_id);
-                    let _ = exec.executor.cancel_request(req_id);
                 }
             }
-        });
+        };
+
+        rayon::spawn(receive_from_responder(responder)());
+        
+        if Some(x) = draft_responder {
+            rayon::spawn(receive_from_responder(x)());
+        }
+
         Ok((res, tok_env, chat_builder))
     }
 

@@ -334,6 +334,7 @@ TlcStatus tlc_enqueue_request(TlcExecutor* ctx, TlcRequest const* request, TlcRe
             req.setLoraConfig(loraConfig);
         }
         //  request.setExternalDraftTokensConfig
+        // replace with executor.enqueueRequest (not requests)
         std::vector<tle::Request> requests;
         requests.emplace_back(std::move(req));
         auto ids = ctx->executor.enqueueRequests(std::move(requests));
