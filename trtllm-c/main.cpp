@@ -34,6 +34,7 @@ struct ResponseData
     std::string error;
     tle::VecTokens tokens;
     tle::VecLogProbs logprobs;
+    tle::Tensor logitsTensor;
 };
 
 struct TlcExecutor
@@ -150,6 +151,16 @@ tle::Shape _tlc_to_tle_shape(TlcShape tlc_shape)
     return tle::Shape(tlc_shape.dims, tlc_shape.num_dims);
 }
 
+TlcShape _tle_to_tlc_shape(const tle::Shape& tle_shape)
+{
+    TlcShape tlc_shape;
+    tlc_shape.num_dims = std::min(tle_shape.size(), static_cast<size_t>(TLC_MAX_SHAPE)); // Ensure within max shape
+
+    std::memcpy(tlc_shape.dims, tle_shape.data(), tlc_shape.num_dims * sizeof(int64_t));
+
+    return tlc_shape;
+}
+
 static tle::DataType to_tle_datatype(TlcDataType t)
 {
     switch (t)
@@ -163,6 +174,23 @@ static tle::DataType to_tle_datatype(TlcDataType t)
     case TLC_DT_F8: return tle::DataType::kFP8;
     case TLC_DT_F16: return tle::DataType::kFP16;
     case TLC_DT_F32: return tle::DataType::kFP32;
+    default: throw std::runtime_error("Unsupported data type");
+    }
+}
+
+static TlcDataType to_tlc_datatype(tle::DataTypee t)
+{
+    switch (t)
+    {
+    case tle::DataType::kBOOL: return TLC_DT_BOOL;
+    case tle::DataType::kUINT8: return TLC_DT_U8;
+    case tle::DataType::kINT8: return TLC_DT_I8;
+    case tle::DataType::kINT32: return TLC_DT_I32;
+    case tle::DataType::kINT64: return TLC_DT_I64;
+    case tle::DataType::kBF16: return TLC_DT_BF16;
+    case tle::DataType::kFP8: return TLC_DT_F8;
+    case tle::DataType::kFP16: return TLC_DT_F16;
+    case tle::DataType::kFP32: return TLC_DT_F32;
     default: throw std::runtime_error("Unsupported data type");
     }
 }
@@ -333,8 +361,20 @@ TlcStatus tlc_enqueue_request(TlcExecutor* ctx, TlcRequest const* request, TlcRe
             tle::LoraConfig loraConfig(lp.lora_id, weights, config);
             req.setLoraConfig(loraConfig);
         }
-        //  request.setExternalDraftTokensConfig
-        // replace with executor.enqueueRequest (not requests)
+
+        // If we have draft params build draft config
+        if (request->draft_params.draft_tokens && request->draft_params.logits_tensor.data_ptr)
+        {
+            auto const& dp = request->draft_params;
+            tle::Tensor logitsTensor;
+            logitsTensor = _tlc_to_tle_tensor(dp.logits_tensor);
+            assert(dp.num_tokens > 0);
+            tle::VecTokens draftTokens(dp.draft_tokens, dp.draft_tokens + dp.num_tokens);
+            tle::ExternalDraftTokensConfig draftTokensConfig(
+                std::move(draftTokens), logitsTensor, std::nullopt, std::nullopt);
+            request.setExternalDraftTokensConfig(draftTokensConfig);
+        }
+
         std::vector<tle::Request> requests;
         requests.emplace_back(std::move(req));
         auto ids = ctx->executor.enqueueRequests(std::move(requests));
@@ -407,6 +447,14 @@ TlcStatus tlc_await_responses(
                 }
                 assert(result.outputTokenIds.size() == 1);
                 resp_data.tokens = result.outputTokenIds.at(0);
+
+                // Grab generationLogits, TODO=need to see if nonstreaming/streaming matters here
+                auto generationLogits = result.generationLogits.value();
+                auto logitsShape = generationLogits.getShape();
+                assert(logitsShape[0] == 1);
+                resp_data.logitsTensor = tle::Tensor::cpu(generationLogits.getDataType(), {logitsShape[1], logitsShape[2]})
+                std::memcpy(logitsTensor.getData(), generationLogits.getData(), generationLogits.getSizeInBytes());
+
                 if (result.logProbs.has_value())
                 {
                     assert(result.logProbs->size() == 1);
@@ -438,6 +486,9 @@ TlcStatus tlc_await_responses(
                 c_resp.num_logprobs = data.logprobs.size();
                 if (c_resp.num_logprobs > 0)
                     c_resp.logprobs = data.logprobs.data();
+                c_resp.logits_tensor.data_type = to_tlc_datatype(data.logitsTensor.getDataType());
+                c_resp.logits_tensor.data_ptr = resp_data.logitsTensor.getData();
+                c_resp.logits_tensor.shape = _tle_to_tlc_shape(resp_data.logitsTensor.getShape());
             }
 
             ctx->responses.emplace_back(c_resp);
