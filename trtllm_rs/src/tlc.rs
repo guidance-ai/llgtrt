@@ -252,6 +252,23 @@ impl ffi::TlcShape {
     }
 }
 
+impl TlcDataType {
+    pub fn size_in_bytes(&self) -> usize {
+        match self {
+            TlcDataType::TLC_DT_F32 => 4,
+            TlcDataType::TLC_DT_F16 => 2,
+            TlcDataType::TLC_DT_I8  => 1,
+            TlcDataType::TLC_DT_I32 => 4,
+            TlcDataType::TLC_DT_BOOL => 1,
+            TlcDataType::TLC_DT_U8  => 1,
+            TlcDataType::TLC_DT_F8  => 1,
+            TlcDataType::TLC_DT_BF16 => 2,
+            TlcDataType::TLC_DT_I64 => 8,
+            TlcDataType::TLC_DT_I4  => 1,
+        }
+    }
+}
+
 impl Default for ffi::TlcTensor {
     fn default() -> Self {
         ffi::TlcTensor {
@@ -292,10 +309,11 @@ impl Tensor {
     pub fn from_tlc_tensor(tlc_tensor: &ffi::TlcTensor) -> Self {
         let shape = tlc_tensor.shape.to_vec();
 
-        let data_ptr = tlc_tensor.data_ptr as *const f32;
-        let num_elements: usize = shape.iter().product();
-        let data: Vec<f32> = unsafe {
-            std::slice::from_raw_parts(data_ptr, num_elements).to_vec()
+        let data_ptr = tlc_tensor.data_ptr as *const u8;
+        let num_elements: usize = shape.iter().product()::<usize>();
+        let num_bytes = num_elements * tlc_tensor.data_type.size_in_bytes();
+        let data: Vec<u8> = unsafe {
+            std::slice::from_raw_parts(data_ptr, num_bytes).to_vec()
         };
 
         Tensor {
