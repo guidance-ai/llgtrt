@@ -8,6 +8,7 @@ members = [
     "llguidance/parser",
     "llguidance/toktrie",
     "llguidance/toktrie_hf_tokenizers",
+    "llguidance/toktrie_hf_downloader",
     "derivre",
 ]
 exclude = [
@@ -25,4 +26,5 @@ derivre = { path = "derivre" }
 toktrie = { path = "llguidance/toktrie" }
 llguidance = { path = "llguidance/parser" }
 toktrie_hf_tokenizers = { path = "llguidance/toktrie_hf_tokenizers" }
+toktrie_hf_downloader = { path = "llguidance/toktrie_hf_downloader" }
 trtllm_rs = { path = "trtllm_rs" }
