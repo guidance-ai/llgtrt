@@ -220,7 +220,7 @@ extern "C"
 
         // these are only output tokens
         uint32_t num_tokens;
-        int32_t const* tokens;  //c_resp.tokens = data.tokens.data();
+        int32_t const* tokens;
         uint32_t num_logprobs;
         float const* logprobs;
         TlcTensor generation_logits;
