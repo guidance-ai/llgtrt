@@ -502,42 +502,51 @@ async fn mk_req_info(
         // TODO override  n draft tokens to execute
         let start_len = req_init.tokens.len();
         let n_gen_tokens = req_init.params.max_new_tokens;
-        let n_draft_tokens = AsyncExecutor::lock(); // TODO how long to do this
-        while req_init.tokens.len() < start_len + n_gen_tokens {
-            req_init.params.max_new_tokens = n_draft_toknes;  // TODO set min?
-            let (req_id, recv) = AsyncExecutor::lock().add_draft_request(
-                &req_init,
-                req_input.prompt_params.clone(),  // TODO needed here?
-                llg.clone(),
-            )?;
+        let total_len = start_len + n_gen_tokens;
+        let n_draft_tokens = AsyncExecutor::lock().n_draft_tokens(); // TODO how long to do this
+        while req_init.tokens.len() < total_len {
+            // handle case where there are less than n_draft_tokens + 1 needed
+            let n_gen_tokens_cur_iter: usize = min(n_draft_tokens + 1, total_len - req_init.tokens.len());
+            let n_draft_tokens_cur_iter = min(n_gen_tokens_cur_iter - 1, n_draft_tokens);
 
-            let mut req_info = build_req_info(
-                req_id,
-                n_forks,
-                client_req_id,
-                cmpl_id.clone(),
-                &prompt,
-                prompt_tokens,
-                params,
-                &app_state.tok_env,
-                is_chat,
-                is_run,
-                recv,
-            )?;
+            if n_draft_tokens_cur_iter > 0 { // if only need 1 token just skip to target
+                req_init.params.max_new_tokens = n_draft_tokens_cur_iter;  // TODO set min?
+                let (req_id, recv) = AsyncExecutor::lock().add_draft_request(
+                    &req_init,
+                    req_input.prompt_params.clone(),  // TODO needed here?
+                    llg.clone(),
+                )?;
 
-            // TODO proper error handling,
-            // TODO need to pass full req_info
-            // TODO this doesn't need return passed reqinfo
-            req_info.usage.completion_tokens = n_draft_tokens;
-            let log_probs: Vec<TopTokenLogProb>;
-            (req_info, log_probs) = gather_response_chunks(req_info).await?;
-            let (tokens, logits) = log_probs.iter().map(|top| (top.chosen.token, top.chosen.logprob)).unzip();
-            req_init.draft_params = Some(DraftParams {
-                draft_tokens: tokens,
-                logits_tensor: logits  // TODO init correctly
-            });
+                let mut req_info = build_req_info(
+                    req_id,
+                    n_forks,
+                    client_req_id,
+                    cmpl_id.clone(),
+                    &prompt,
+                    prompt_tokens,
+                    params,
+                    &app_state.tok_env,
+                    is_chat,
+                    is_run,
+                    recv,
+                )?;
 
-            req_init.params.max_new_tokens = n_draft_tokens + 1;  // TODO double check this
+                // TODO proper error handling,
+                // TODO need to pass full req_info
+                // TODO this doesn't need return passed reqinfo
+                req_info.usage.completion_tokens = n_draft_tokens;
+                let log_probs: Vec<TopTokenLogProb>;
+                (req_info, log_probs) = gather_response_chunks(req_info).await?;
+                let (tokens, logits) = log_probs.iter().map(|top| (top.chosen.token, top.chosen.logprob)).unzip();
+                req_init.draft_params = Some(DraftParams {
+                    draft_tokens: tokens,
+                    logits_tensor: logits  // TODO init correctly
+                });
+            } else {
+                req_init.draft_params = None; // clear from last time draft model was called 
+            }
+
+            req_init.params.max_new_tokens = n_draft_tokens_cur_iter + 1;  // TODO double check this
             (req_id, recv) = AsyncExecutor::lock().add_request(
                 &req_init,
                 req_input.prompt_params.clone(),
