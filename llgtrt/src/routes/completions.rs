@@ -8,7 +8,6 @@ use axum::response::sse::{Event, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 use core::panic;
-use std::iter::zip;
 use futures_core::Stream;
 use llguidance::api::{GrammarWithLexer, TopLevelGrammar};
 use llguidance::Constraint;
@@ -414,7 +413,7 @@ async fn mk_req_info(
     log::debug!("{}", app_state.tok_env.tok_trie().tokens_dbg(&tokens));
 
     let eos_token = if is_chat {
-        app_state.tok_eos_chatreq_input
+        app_state.tok_eos_chat
     } else {
         app_state.tok_eos_completions
     };
@@ -543,7 +542,7 @@ async fn mk_req_info(
                     logits_tensor: logits  // TODO init correctly
                 });
             } else {
-                req_init.draft_params = None; // clear from last time draft model was called 
+                req_init.draft_params = None; // clear from last time draft model was called
             }
 
             req_init.params.max_new_tokens = n_draft_tokens_cur_iter + 1;  // TODO double check this
@@ -1103,8 +1102,8 @@ async fn gather_response_chunks(mut client: ReqInfo) -> Result<(ReqInfo, Vec<Top
 
 async fn completions(mut client: ReqInfo) -> Result<Json<Value>, AppError> {
     let mut token = client.cancel_token();
-    // let mut logprobs = vec![];
-    (client, log_probs) = gather_response_chunks(client)?;
+    let mut logprobs = vec![];
+    (client, logprobs) = gather_response_chunks(client).await?;
     // while let Some(mut result) = client.recv.recv().await {
     //     log::trace!("infer response: {:?}", result.response);
     //     let response = &result.response;

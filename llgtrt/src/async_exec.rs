@@ -308,6 +308,7 @@ extern "C" fn logits_processor(logits: *mut TlcLogitsEntry, num_logits: u32) {
                             is_req_final: true,
                             logprobs: None,
                             tokens: vec![],
+                            generation_logits: None // TODO how fill this
                         },
                         logs: std::mem::take(&mut rd.logs),
                         final_llg: None,
@@ -384,7 +385,7 @@ impl AsyncExecutor {
         log::info!("new executor: max_batch_size={max_batch_size}");
         let (executor, mut responder) = Executor::new(executor_init)?;
 
-        let (draft_executor, mut draft_responder) = if draft_executor_init.is_some() {
+        let (draft_executor, mut draft_responder) = if let Some(draft_executor_init) = draft_executor_init {
             draft_executor_init.logits_callback = Some(logits_processor);
             max_batch_size = draft_executor_init.trt_params.max_batch_size as usize;
             log::info!("new draft executor: max_batch_size={max_batch_size}");
@@ -412,7 +413,7 @@ impl AsyncExecutor {
         };
 
         // TODO idk what this does rn, need to setup with draft_responder?
-        let receive_from_responder = |responder: Responder| -> FnOnce {
+        let receive_from_responder = |responder: Responder| -> dyn FnOnce {
             return || {
                 move || loop {
                     let resps = responder
@@ -458,7 +459,7 @@ impl AsyncExecutor {
 
         rayon::spawn(receive_from_responder(responder)());
 
-        if Some(x) = draft_responder {
+        if let Some(x) = draft_responder {
             rayon::spawn(receive_from_responder(x)());
         }
 
@@ -476,7 +477,6 @@ impl AsyncExecutor {
         llgs: Vec<Box<Constraint>>,
     ) -> Result<(ReqId, UnboundedReceiver<StepResults>)> {
         debug_assert!(self.draft_executor.is_some());
-        init.params.
         self.add_request_to_executor(
             self.draft_executor.expect("this should've been checked before calling this method"),
             init,
@@ -496,7 +496,7 @@ impl AsyncExecutor {
 
     fn add_request_to_executor(
         &mut self,
-        executor: Executor,
+        mut executor: Executor,
         init: &RequestInit,
         prompt_params: Option<Arc<PyPromptParams>>,
         llgs: Vec<Box<Constraint>>,
@@ -511,7 +511,7 @@ impl AsyncExecutor {
 
         let pp = prompt_params.as_ref().map(|p| &p.tlc_prompt_params);
 
-        let req_id = self.executor.enqueue_request(init, pp)?;
+        let req_id = executor.enqueue_request(init, pp)?;
         self.req_data.insert(
             client_req_id,
             ReqData {

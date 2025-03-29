@@ -206,7 +206,7 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
 
     if draft_exec_config.is_some() {
         // make sure this is set to if using draft model
-        p.enable_kv_cache_reuse = True;
+        p.enable_kv_cache_reuse = true;
         p.n_draft_tokens = Some(5)
     }
 
