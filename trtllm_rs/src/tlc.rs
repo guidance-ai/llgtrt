@@ -272,6 +272,16 @@ impl Default for ffi::TlcLoraParams {
     }
 }
 
+impl Default for ffi::TlcDraftParams {
+    fn default() -> Self {
+        ffi::TlcDraftParams {
+            draft_tokens: std::ptr::null_mut(),  // TODO default for raw pointer??
+            num_tokens: 0,
+            logits_tensor: ffi::TlcTensor::default()
+        }
+    }
+}
+
 impl Tensor {
     pub fn as_tlc_tensor(&self) -> ffi::TlcTensor {
         let tensor = self;
@@ -293,10 +303,10 @@ impl Tensor {
         let shape = tlc_tensor.shape.to_vec();
 
         let data_ptr = tlc_tensor.data_ptr as *const f32;
-        let num_elements: usize = shape.iter().product();
-        let data: Vec<f32> = unsafe {
+        let num_elements: usize = i64::try_into(shape.iter().product::<i64>()).expect("all elements are positive so this should work");
+        let data: Vec<u8> = unsafe {
             std::slice::from_raw_parts(data_ptr, num_elements).to_vec()
-        };
+        }.into_iter().map(|x| x as u8).collect();
 
         Tensor {
             size: shape,
@@ -349,6 +359,7 @@ impl Executor {
             client_req_id: init.client_req_id.0,
             lora_params: ffi::TlcLoraParams::default(),
             prompt_params: ffi::TlcPromptParams::default(),
+            draft_params: ffi::TlcDraftParams::default(),
         };
 
         if let Some(pp) = prompt_params {
@@ -373,8 +384,8 @@ impl Executor {
         // Load draft params in request if we have any.
         if let Some(draft_params) = &init.draft_params {
             let mut dp = ffi::TlcDraftParams {
-                draft_tokens: draft_params.tokens.as_ptr() as *mut i32,
-                num_tokens: draft_params.tokens.len() as u32,
+                draft_tokens: draft_params.draft_tokens.as_ptr() as *mut i32,
+                num_tokens: draft_params.draft_tokens.len() as u32,
                 logits_tensor: ffi::TlcTensor::default(),
             };
             if let Some(logits) = &draft_params.logits_tensor {
@@ -498,7 +509,7 @@ impl Responder {
                         },
                         logprobs,
                         tokens,
-                        generation_logits: Tensor::from_tlc_tensor(resp.generation_logits)
+                        generation_logits: Some(Tensor::from_tlc_tensor(&resp.generation_logits))
                     }
                 })
                 .collect())
