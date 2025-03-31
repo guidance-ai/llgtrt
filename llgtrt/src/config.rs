@@ -166,6 +166,10 @@ pub struct CliConfig {
     #[arg(long)]
     pub draft_tokenizer: Option<String>,
 
+    // default number of tokens to execute from draft model
+    #[arg(long)]
+    pub n_draft_tokens: Option<usize>,
+
     /// Debug output
     #[arg(long, short = 'd')]
     pub debug: bool,

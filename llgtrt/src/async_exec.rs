@@ -12,7 +12,7 @@ use std::{
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use toktrie::{SimpleVob, TokEnv};
 use trtllm_rs::{
-    ClientReqId, Executor, ExecutorInit, MaskAllocator, ReqId, RequestInit, Responder, ResponseChunk, TlcLogitsEntry
+    ClientReqId, Executor, ExecutorInit, MaskAllocator, ReqId, RequestInit, ResponseChunk, TlcLogitsEntry
 };
 
 use crate::{
@@ -378,7 +378,8 @@ impl AsyncExecutor {
         cli_config: &CliConfig,
         config: &LlgTrtConfig,
         mut executor_init: ExecutorInit,
-        mut draft_executor_init: Option<ExecutorInit>,
+        draft_executor_init: Option<ExecutorInit>,
+        n_draft_tokens: u32
     ) -> Result<(Self, TokEnv, ChatBuilder)> {
         executor_init.logits_callback = Some(logits_processor);
         let mut max_batch_size = executor_init.trt_params.max_batch_size as usize;
@@ -386,7 +387,8 @@ impl AsyncExecutor {
         let (executor, mut responder) = Executor::new(executor_init)?;
 
         let (draft_executor, mut draft_responder) = if let Some(draft_executor_init) = draft_executor_init {
-            draft_executor_init.logits_callback = Some(logits_processor);
+            // TODO don't set logit processor for draft model right now
+            //draft_executor_init.logits_callback = Some(logits_processor);
             max_batch_size = draft_executor_init.trt_params.max_batch_size as usize;
             log::info!("new draft executor: max_batch_size={max_batch_size}");
             let (executor, responder) = Executor::new(draft_executor_init)?;
@@ -395,6 +397,7 @@ impl AsyncExecutor {
             (None, None)
         };
 
+        // TODO need to do this for draft executor?
         // on non-0 ranks, this will just wait until the rank 0 exits and then exit the process
         executor.check_mpi();
 
@@ -410,64 +413,62 @@ impl AsyncExecutor {
             req_to_client: HashMap::new(),
             n_vocab,
             max_batch_size,
+            n_draft_tokens,
         };
 
-        // TODO idk what this does rn, need to setup with draft_responder?
-        let receive_from_responder = |responder: Responder| -> dyn FnOnce {
-            return || {
-                move || loop {
-                    let resps = responder
-                        .await_responses(std::time::Duration::from_millis(1))
-                        .unwrap();
+        rayon::spawn(
+            move || loop {
+                let mut resps = responder
+                    .await_responses(std::time::Duration::from_millis(1))
+                    .unwrap();
 
-                    if resps.len() == 0 {
-                        continue;
-                    }
+                if let Some(x) = draft_responder.as_mut() {
+                    resps.append(&mut x
+                    .await_responses(std::time::Duration::from_millis(1))
+                    .unwrap())
+                };
 
-                    let mut exec = AsyncExecutor::lock();
-                    for resp in resps {
-                        let req_id = resp.req_id;
-                        if let Some(client_req_id) = exec.req_to_client.get(&req_id) {
-                            let client_req_id = *client_req_id;
-                            let rd = exec.req_data.get_mut(&client_req_id).unwrap();
-                            let is_req_final = resp.is_req_final;
-                            let idx = resp.sequence_idx as usize;
+                if resps.len() == 0 {
+                    continue;
+                }
 
-                            let mut r = StepResults {
-                                response: resp,
-                                logs: std::mem::take(&mut rd.logs),
-                                final_llg: None,
-                            };
-                            if rd.llgs.len() > 0 && r.response.finish_reason.is_some() {
-                                r.final_llg = std::mem::take(&mut rd.llgs[idx]);
-                            }
-                            if rd.tx.send(r).is_err() {
-                                log::warn!("connection dropped; req={}", req_id);
-                                let _ = exec.cancel_request(req_id);
-                            } else if is_req_final {
-                                // no more data coming from here
-                                exec.drop_request_data(req_id);
-                            }
-                        } else {
-                            log::warn!("Response for unknown request: {:?}", req_id);
-                            let _ = exec.executor.cancel_request(req_id);
+                let mut exec = AsyncExecutor::lock();
+                for resp in resps {
+                    let req_id = resp.req_id;
+                    if let Some(client_req_id) = exec.req_to_client.get(&req_id) {
+                        let client_req_id = *client_req_id;
+                        let rd = exec.req_data.get_mut(&client_req_id).unwrap();
+                        let is_req_final = resp.is_req_final;
+                        let idx = resp.sequence_idx as usize;
+
+                        let mut r = StepResults {
+                            response: resp,
+                            logs: std::mem::take(&mut rd.logs),
+                            final_llg: None,
+                        };
+                        if rd.llgs.len() > 0 && r.response.finish_reason.is_some() {
+                            r.final_llg = std::mem::take(&mut rd.llgs[idx]);
                         }
+                        if rd.tx.send(r).is_err() {
+                            log::warn!("connection dropped; req={}", req_id);
+                            let _ = exec.cancel_request(req_id);
+                        } else if is_req_final {
+                            // no more data coming from here
+                            exec.drop_request_data(req_id);
+                        }
+                    } else {
+                        log::warn!("Response for unknown request: {:?}", req_id);
+                        let _ = exec.executor.cancel_request(req_id);
                     }
                 }
             }
-        };
-
-        rayon::spawn(receive_from_responder(responder)());
-
-        if let Some(x) = draft_responder {
-            rayon::spawn(receive_from_responder(x)());
-        }
+        );
 
         Ok((res, tok_env, chat_builder))
     }
 
     pub fn can_enqueue_request(&self) -> bool {
-        self.executor.can_enqueue_request()
+        self.executor.can_enqueue_request() && self.draft_executor.as_ref().map_or(true, |ex| ex.can_enqueue_request())
     }
 
     pub fn add_draft_request(
@@ -478,10 +479,10 @@ impl AsyncExecutor {
     ) -> Result<(ReqId, UnboundedReceiver<StepResults>)> {
         debug_assert!(self.draft_executor.is_some());
         self.add_request_to_executor(
-            self.draft_executor.expect("this should've been checked before calling this method"),
             init,
             prompt_params,
-            llgs
+            llgs,
+            true
         )
     }
 
@@ -491,15 +492,15 @@ impl AsyncExecutor {
         prompt_params: Option<Arc<PyPromptParams>>,
         llgs: Vec<Box<Constraint>>,
     ) -> Result<(ReqId, UnboundedReceiver<StepResults>)> {
-        self.add_request_to_executor(self.executor, init, prompt_params, llgs)
+        self.add_request_to_executor(init, prompt_params, llgs, true)
     }
 
     fn add_request_to_executor(
         &mut self,
-        mut executor: Executor,
         init: &RequestInit,
         prompt_params: Option<Arc<PyPromptParams>>,
         llgs: Vec<Box<Constraint>>,
+        use_draft_model: bool
     ) -> Result<(ReqId, UnboundedReceiver<StepResults>)> {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
 
@@ -511,7 +512,12 @@ impl AsyncExecutor {
 
         let pp = prompt_params.as_ref().map(|p| &p.tlc_prompt_params);
 
-        let req_id = executor.enqueue_request(init, pp)?;
+        let req_id = if use_draft_model {
+            self.draft_executor.as_mut().expect("msg").enqueue_request(init, pp)?
+        } else {
+            self.executor.enqueue_request(init, pp)?
+        };
+
         self.req_data.insert(
             client_req_id,
             ReqData {

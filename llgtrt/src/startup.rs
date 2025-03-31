@@ -207,7 +207,6 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
     if draft_exec_config.is_some() {
         // make sure this is set to if using draft model
         p.enable_kv_cache_reuse = true;
-        p.n_draft_tokens = Some(5)
     }
 
     log::info!("Initializing executor with config: {:?}", exec_config);
@@ -219,7 +218,8 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let (executor, tok_env, chat_builder) = AsyncExecutor::new(&cli_config, &config, exec_config, draft_exec_config)?;
+    let n_draft_tokens = cli_config.n_draft_tokens.unwrap_or(5);
+    let (executor, tok_env, chat_builder) = AsyncExecutor::new(&cli_config, &config, exec_config, draft_exec_config, n_draft_tokens as u32)?;
 
     // we only get here on rank 0
 
