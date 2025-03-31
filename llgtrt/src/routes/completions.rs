@@ -504,13 +504,12 @@ async fn mk_req_info(
         let n_gen_tokens = req_init.params.max_new_tokens as usize;
         let total_len = start_len + n_gen_tokens;
         let n_draft_tokens = AsyncExecutor::lock().n_draft_tokens(); // TODO how long to do this
-        let mut req_info: ReqInfo;
+        let mut req_info: Option<ReqInfo> = None;  // need as option due to loop
         while req_init.tokens.len() < total_len {
             // handle case where there are less than n_draft_tokens + 1 needed
             let n_gen_tokens_cur_iter: usize = min(n_draft_tokens as usize + 1, total_len - req_init.tokens.len());
             let n_draft_tokens_cur_iter = min(n_gen_tokens_cur_iter - 1, n_draft_tokens as usize);
             let mut log_probs: Vec<TopTokenLogProb>;
-            let mut req_info: ReqInfo;
             let mut req_id: ReqId;
             let mut recv;
             if n_draft_tokens_cur_iter > 0 { // if only need 1 token just skip to target
@@ -521,9 +520,9 @@ async fn mk_req_info(
                     llg.clone(),
                 )?;
 
-                req_info = build_req_info(
+                req_info = Some(build_req_info(
                     req_id,
-                    n_forks,
+                    1,  // TODO how to handle this? keep as 1 for now
                     client_req_id,
                     cmpl_id.clone(),
                     &prompt,
@@ -533,24 +532,20 @@ async fn mk_req_info(
                     is_chat,
                     is_run,
                     recv,
-                )?;
+                )?);
 
                 // TODO proper error handling,
-                // TODO need to pass full req_info
                 // TODO this doesn't need return passed reqinfo
-                req_info.usage.completion_tokens = n_draft_tokens_cur_iter;
-                (req_info, log_probs) = gather_response_chunks(req_info).await?;
-
-                let mut draft_tokens: Vec<String> = Vec::new();
-                for top in log_probs {
-                    draft_tokens.push(top.chosen.token);
-                }
-
+                let (mut req_info_temp, log_probs) = gather_response_chunks(req_info.unwrap()).await?;
+                req_info_temp.usage.completion_tokens = n_draft_tokens_cur_iter;
+                let draft_tokens = req_info_temp.tok_env.tokenize_bytes(&req_info_temp.forks[0].text);
+                assert!(draft_tokens.len() == n_draft_tokens_cur_iter); // TODO debug or rm
                 req_init.draft_params = Some(DraftParams {
-                    draft_tokens: todo!(),  // TODO how to encode string? tokenv?
+                    draft_tokens,
                     logits_tensor: None, // TODO add logits later
-                    num_tokens: n_draft_tokens_cur_iter as u32  // TODO init correctly
+                    num_tokens: n_draft_tokens_cur_iter as u32  // TODO init correctly>
                 });
+                req_info = Some(req_info_temp)
             } else {
                 req_init.draft_params = None; // clear from last time draft model was called
             }
@@ -562,7 +557,7 @@ async fn mk_req_info(
                 llg.clone()
             )?;
 
-            req_info = build_req_info(
+            req_info = Some(build_req_info(
                 req_id,
                 n_forks,
                 client_req_id,
@@ -574,17 +569,13 @@ async fn mk_req_info(
                 is_chat,
                 is_run,
                 recv,
-            )?;
+            )?);
 
-            (req_info, log_probs) = gather_response_chunks(req_info).await?;
+            let (req_info_temp, _) = gather_response_chunks(req_info.unwrap()).await?;
 
-            let mut target_tokens: Vec<String> = Vec::new();
-            for top in log_probs {
-                target_tokens.push(top.chosen.token);
-            }
-
+            let mut target_tokens = req_info_temp.tok_env.tokenize_bytes(&req_info_temp.forks[0].text);
+            req_init.tokens.append(&mut target_tokens);
             // TODO double check gather_response_chunks return prompt tokens as well?
-            req_init.tokens.append(target_tokens); // TODO same here, how to encode String to u32 tokenv?
             req_init = build_request_init(
                 req_init.tokens,
                 req_params.clone(),
@@ -594,10 +585,11 @@ async fn mk_req_info(
                 app_state,
                 load_lora_weights,
             )?;
+            req_info = Some(req_info_temp)
         }
 
         // TODO if req_info has gotten all info should skip inner gather loop?
-        completions_stream_or_not(false, req_info).await
+        completions_stream_or_not(false, req_info.expect("no tokens generated")).await
     } else {
         let (req_id, recv) = AsyncExecutor::lock().add_request(
             &req_init,
