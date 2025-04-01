@@ -156,7 +156,7 @@ TlcShape _tle_to_tlc_shape(const tle::Shape& tle_shape)
     TlcShape tlc_shape;
     tlc_shape.num_dims = std::min(tle_shape.size(), static_cast<size_t>(TLC_MAX_SHAPE)); // Ensure within max shape
 
-    std::memcpy(tlc_shape.dims, tle_shape.data(), tlc_shape.num_dims * sizeof(int64_t));
+    std::memcpy(tlc_shape.dims, tle_shape.begin(), tlc_shape.num_dims * sizeof(int64_t));
 
     return tlc_shape;
 }
@@ -178,7 +178,7 @@ static tle::DataType to_tle_datatype(TlcDataType t)
     }
 }
 
-static TlcDataType to_tlc_datatype(tle::DataTypee t)
+static TlcDataType to_tlc_datatype(tle::DataType t)
 {
     switch (t)
     {
@@ -372,7 +372,7 @@ TlcStatus tlc_enqueue_request(TlcExecutor* ctx, TlcRequest const* request, TlcRe
             tle::VecTokens draftTokens(dp.draft_tokens, dp.draft_tokens + dp.num_tokens);
             tle::ExternalDraftTokensConfig draftTokensConfig(
                 std::move(draftTokens), logitsTensor, std::nullopt, std::nullopt);
-            request.setExternalDraftTokensConfig(draftTokensConfig);
+            req.setExternalDraftTokensConfig(draftTokensConfig);
         }
 
         std::vector<tle::Request> requests;
@@ -452,7 +452,7 @@ TlcStatus tlc_await_responses(
                 auto generationLogits = result.generationLogits.value();
                 auto logitsShape = generationLogits.getShape();
                 assert(logitsShape[0] == 1);
-                resp_data.logitsTensor = tle::Tensor::cpu(generationLogits.getDataType(), {logitsShape[1], logitsShape[2]})
+                resp_data.logitsTensor = tle::Tensor::cpu(generationLogits.getDataType(), {logitsShape[1], logitsShape[2]});
                 std::memcpy(logitsTensor.getData(), generationLogits.getData(), generationLogits.getSizeInBytes());
 
                 if (result.logProbs.has_value())

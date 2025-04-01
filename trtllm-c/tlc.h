@@ -223,7 +223,7 @@ extern "C"
         int32_t const* tokens;
         uint32_t num_logprobs;
         float const* logprobs;
-        TlcTensor generation_logits;
+        TlcTensor logits_tensor;
     } TlcResponse;
 
     typedef struct TlcExecutor TlcExecutor;
