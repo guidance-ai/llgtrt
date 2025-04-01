@@ -525,7 +525,7 @@ impl Responder {
                         },
                         logprobs,
                         tokens,
-                        generation_logits: Some(Tensor::from_tlc_tensor(&resp.generation_logits))
+                        generation_logits: Some(Tensor::from_tlc_tensor(&resp.logits_tensor))
                     }
                 })
                 .collect())
