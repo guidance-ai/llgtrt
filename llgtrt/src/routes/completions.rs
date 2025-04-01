@@ -522,7 +522,7 @@ async fn mk_req_info(
 
                 req_info = Some(build_req_info(
                     req_id,
-                    1,  // TODO how to handle this? keep as 1 for now
+                    1,  // TODO how to handle num_return_sequences? keep as 1 for now
                     client_req_id,
                     cmpl_id.clone(),
                     &prompt,
@@ -559,7 +559,7 @@ async fn mk_req_info(
 
             req_info = Some(build_req_info(
                 req_id,
-                n_forks,
+                1, // TODO how to handle num_return_sequences? keep as 1 for now,
                 client_req_id,
                 cmpl_id.clone(),
                 &prompt,
@@ -1111,7 +1111,11 @@ async fn gather_response_chunks(mut client: ReqInfo) -> Result<(ReqInfo, Vec<Top
 async fn completions(mut client: ReqInfo) -> Result<Json<Value>, AppError> {
     let mut token = client.cancel_token();
     let mut logprobs = vec![];
-    (client, logprobs) = gather_response_chunks(client).await?;
+
+    // TODO this should skip this if gather_response_chunks was called already
+    if client.all_forks_stopped() {
+        (client, logprobs) = gather_response_chunks(client).await?;
+    }
     // while let Some(mut result) = client.recv.recv().await {
     //     log::trace!("infer response: {:?}", result.response);
     //     let response = &result.response;
@@ -1165,7 +1169,7 @@ async fn completions(mut client: ReqInfo) -> Result<Json<Value>, AppError> {
                 } else {
                     Some(fork.logs)
                 },
-                logprobs: if logprobs.is_empty() {
+                logprobs: if logprobs.is_empty() {  // TODO need to pass logprobs if gather_response_chunks called earlier
                     None
                 } else {
                     Some(LogProbs {
