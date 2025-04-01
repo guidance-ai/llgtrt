@@ -23,7 +23,7 @@
     catch (...)                                                                                                        \
     {                                                                                                                  \
         return strdup("Unknown exception.");                                                                           \
-    }                                f                                                                                  \
+    }                                                                                                                  \
     return nullptr
 
 namespace tle = tensorrt_llm::executor;
