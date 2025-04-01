@@ -453,7 +453,7 @@ TlcStatus tlc_await_responses(
                 auto logitsShape = generationLogits.getShape();
                 assert(logitsShape[0] == 1);
                 resp_data.logitsTensor = tle::Tensor::cpu(generationLogits.getDataType(), {logitsShape[1], logitsShape[2]});
-                std::memcpy(logitsTensor.getData(), generationLogits.getData(), generationLogits.getSizeInBytes());
+                std::memcpy(resp_data.logitsTensor.getData(), generationLogits.getData(), generationLogits.getSizeInBytes());
 
                 if (result.logProbs.has_value())
                 {
