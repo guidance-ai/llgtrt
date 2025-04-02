@@ -508,6 +508,12 @@ impl Responder {
                         )
                     };
 
+                    let generation_logits = if resp.logits_tensor.is_null() {
+                        None
+                    } else {
+                        Some(Tensor::from_tlc_tensor(&resp.logits_tensor))
+                    }
+
                     ResponseChunk {
                         req_id: ReqId(resp.req_id),
                         sequence_idx: resp.sequence_idx,
@@ -525,7 +531,7 @@ impl Responder {
                         },
                         logprobs,
                         tokens,
-                        generation_logits: Some(Tensor::from_tlc_tensor(&resp.logits_tensor))
+                        generation_logits
                     }
                 })
                 .collect())
