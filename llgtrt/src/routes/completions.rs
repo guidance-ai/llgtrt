@@ -596,7 +596,7 @@ async fn mk_req_info(
                  let perc_draft_tokens_used = draft_tokens.len() as f32 - (target_tokens.len() - 1) as f32 / draft_tokens.len() as f32;
                  log::debug!(
                     "Target model used {}% of draft model tokens",
-                    perc_draft_tokens_used * 100 as f32
+                    perc_draft_tokens_used
                 );
             }
 
