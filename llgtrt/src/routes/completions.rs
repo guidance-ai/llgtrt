@@ -1112,6 +1112,7 @@ async fn gather_response_chunks(mut client: ReqInfo) -> Result<(ReqInfo, Vec<Top
         } else {
             client.usage.completion_tokens += response.tokens.len();
             client.usage.total_tokens += response.tokens.len();
+            let response = result.response.clone(); // Clone the response to avoid borrowing conflicts
             let r = client.update_text(&mut result, false);
             if let Some(mut lp) = r.logprobs {
                 logprobs.append(&mut lp.content);
@@ -1138,7 +1139,7 @@ async fn completions(mut client: ReqInfo, final_content: Option<Vec<u8>>) -> Res
 
     // TODO this should skip this if gather_response_chunks was called already
     if client.all_forks_stopped() {
-        (client, logprobs) = gather_response_chunks(client).await?;
+        (client, logprobs, _) = gather_response_chunks(client).await?;
     }
     // while let Some(mut result) = client.recv.recv().await {
     //     log::trace!("infer response: {:?}", result.response);
