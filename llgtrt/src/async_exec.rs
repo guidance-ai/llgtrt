@@ -492,7 +492,7 @@ impl AsyncExecutor {
         prompt_params: Option<Arc<PyPromptParams>>,
         llgs: Vec<Box<Constraint>>,
     ) -> Result<(ReqId, UnboundedReceiver<StepResults>)> {
-        self.add_request_to_executor(init, prompt_params, llgs, true)
+        self.add_request_to_executor(init, prompt_params, llgs, false)
     }
 
     fn add_request_to_executor(
