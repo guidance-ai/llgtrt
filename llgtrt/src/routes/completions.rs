@@ -514,7 +514,12 @@ async fn mk_req_info(
             let mut log_probs: Vec<TopTokenLogProb>;
             let mut req_id: ReqId;
             let mut recv;
+            let mut draft_tokens = None;
             if n_draft_tokens_cur_iter > 0 { // if only need 1 token just skip to target
+                log::debug!(
+                    "Generate {} draft tokens",
+                    n_draft_tokens_cur_iter
+                );
                 req_init.params.max_new_tokens = n_draft_tokens_cur_iter as u32;  // TODO set min?
                 let (req_id, recv) = AsyncExecutor::lock().add_draft_request(
                     &req_init,
@@ -540,23 +545,30 @@ async fn mk_req_info(
                 // TODO this doesn't need return passed reqinfo
                 let (mut req_info_temp, log_probs) = gather_response_chunks(req_info.unwrap()).await?;
                 req_info_temp.usage.completion_tokens = n_draft_tokens_cur_iter;
-                let draft_tokens = req_info_temp.tok_env.tokenize_bytes(&req_info_temp.forks[0].text);
+                let cur_draft_tokens = req_info_temp.tok_env.tokenize_bytes(&req_info_temp.forks[0].text);
+
                 log::debug!(
                     "Draft output: {}",
-                    req_info_temp.tok_env.tok_trie().tokens_dbg(&draft_tokens)
+                    req_info_temp.tok_env.tok_trie().tokens_dbg(&cur_draft_tokens)
                 );
-                debug_assert!(draft_tokens.len() == n_draft_tokens_cur_iter); // TODO debug or rm
+                log::debug!(
+                    "Draft model generated {}/{} tokens", cur_draft_tokens.len(), n_draft_tokens_cur_iter
+                );
+                //debug_assert!(cur_draft_tokens.len() == n_draft_tokens_cur_iter);
+
                 req_init.draft_params = Some(DraftParams {
-                    draft_tokens,
+                    draft_tokens: cur_draft_tokens.clone(),
                     logits_tensor: None, // TODO add logits later
-                    num_tokens: n_draft_tokens_cur_iter as u32  // TODO init correctly>
+                    num_tokens: n_draft_tokens_cur_iter as u32
                 });
-                req_info = Some(req_info_temp)
+                req_info = Some(req_info_temp);
+                draft_tokens = Some(cur_draft_tokens);
             } else {
                 req_init.draft_params = None; // clear from last time draft model was called
             }
 
-            req_init.params.max_new_tokens = n_draft_tokens_cur_iter as u32 + 1;  // TODO double check this
+            let n_max_target_tokens = n_draft_tokens_cur_iter as u32 + 1;
+            req_init.params.max_new_tokens = n_max_target_tokens;
             (req_id, recv) = AsyncExecutor::lock().add_request(
                 &req_init,
                 req_input.prompt_params.clone(),
@@ -578,12 +590,25 @@ async fn mk_req_info(
             )?);
 
             let (mut req_info_temp, _) = gather_response_chunks(req_info.unwrap()).await?;
-
             let mut target_tokens = req_info_temp.tok_env.tokenize_bytes(&req_info_temp.forks[0].text);
+
+            if let Some(draft_tokens) = draft_tokens {
+                 let perc_draft_tokens_used = draft_tokens.len() as f32 - (target_tokens.len() - 1) as f32 / draft_tokens.len() as f32;
+                 log::debug!(
+                    "Target model used {}% of draft model tokens",
+                    perc_draft_tokens_used * 100 as f32
+                );
+            }
+
+            log::debug!(
+                "Target model generated {}/{} tokens", target_tokens.len(), n_max_target_tokens
+            );
+
             log::debug!(
                 "Target output: {}",
                 req_info_temp.tok_env.tok_trie().tokens_dbg(&target_tokens)
             );
+
             req_init.tokens.append(&mut target_tokens);
             gen_bytes.append(&mut req_info_temp.forks[0].text);
             // TODO double check gather_response_chunks return prompt tokens as well?
