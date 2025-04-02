@@ -393,11 +393,12 @@ fn build_req_info(
 async fn completions_stream_or_not(
     stream: bool,
     info: ReqInfo,
+    final_content: Option<Vec<u8>>
 ) -> Result<Response<Body>, AppError> {
     if stream {
         completions_stream(info).await.map(|r| r.into_response())
     } else {
-        completions(info).await.map(|r| r.into_response())
+        completions(info, final_content).await.map(|r| r.into_response())
     }
 }
 
@@ -411,7 +412,7 @@ async fn mk_req_info(
     let mut req_params = req_params_from_openai(params)?;
     let mut tokens = req_input.tokens;
     let prompt = req_input.prompt;
-    log::debug!("{}", app_state.tok_env.tok_trie().tokens_dbg(&tokens));
+    log::debug!("First input prompt {}", app_state.tok_env.tok_trie().tokens_dbg(&tokens));
 
     let eos_token = if is_chat {
         app_state.tok_eos_chat
@@ -505,6 +506,7 @@ async fn mk_req_info(
         let total_len = start_len + n_gen_tokens;
         let n_draft_tokens = AsyncExecutor::lock().n_draft_tokens(); // TODO how long to do this
         let mut req_info: Option<ReqInfo> = None;  // need as option due to loop
+        let mut gen_bytes: Vec<u8> = Vec::new();
         while req_init.tokens.len() < total_len {
             // handle case where there are less than n_draft_tokens + 1 needed
             let n_gen_tokens_cur_iter: usize = min(n_draft_tokens as usize + 1, total_len - req_init.tokens.len());
@@ -539,7 +541,11 @@ async fn mk_req_info(
                 let (mut req_info_temp, log_probs) = gather_response_chunks(req_info.unwrap()).await?;
                 req_info_temp.usage.completion_tokens = n_draft_tokens_cur_iter;
                 let draft_tokens = req_info_temp.tok_env.tokenize_bytes(&req_info_temp.forks[0].text);
-                assert!(draft_tokens.len() == n_draft_tokens_cur_iter); // TODO debug or rm
+                log::debug!(
+                    "Draft output: {}",
+                    req_info_temp.tok_env.tok_trie().tokens_dbg(&draft_tokens)
+                );
+                debug_assert!(draft_tokens.len() == n_draft_tokens_cur_iter); // TODO debug or rm
                 req_init.draft_params = Some(DraftParams {
                     draft_tokens,
                     logits_tensor: None, // TODO add logits later
@@ -571,10 +577,15 @@ async fn mk_req_info(
                 recv,
             )?);
 
-            let (req_info_temp, _) = gather_response_chunks(req_info.unwrap()).await?;
+            let (mut req_info_temp, _) = gather_response_chunks(req_info.unwrap()).await?;
 
             let mut target_tokens = req_info_temp.tok_env.tokenize_bytes(&req_info_temp.forks[0].text);
+            log::debug!(
+                "Target output: {}",
+                req_info_temp.tok_env.tok_trie().tokens_dbg(&target_tokens)
+            );
             req_init.tokens.append(&mut target_tokens);
+            gen_bytes.append(&mut req_info_temp.forks[0].text);
             // TODO double check gather_response_chunks return prompt tokens as well?
             req_init = build_request_init(
                 req_init.tokens,
@@ -585,11 +596,15 @@ async fn mk_req_info(
                 app_state,
                 load_lora_weights,
             )?;
-            req_info = Some(req_info_temp)
-        }
+            log::debug!(
+                "Req init output: {}",
+                req_info_temp.tok_env.tok_trie().tokens_dbg(&req_init.tokens)
+            );
+            req_info = Some(req_info_temp);
 
+        }
         // TODO if req_info has gotten all info should skip inner gather loop?
-        completions_stream_or_not(false, req_info.expect("no tokens generated")).await
+        completions_stream_or_not(false, req_info.expect("no tokens generated"), Some(gen_bytes)).await
     } else {
         let (req_id, recv) = AsyncExecutor::lock().add_request(
             &req_init,
@@ -611,7 +626,7 @@ async fn mk_req_info(
             recv,
         )?;
 
-        match completions_stream_or_not(params.stream, info).await {
+        match completions_stream_or_not(params.stream, info, None).await {
             Ok(r) => Ok(r),
             Err(err) => {
                 if is_lora_cache_miss_error(&err) {
@@ -651,7 +666,7 @@ async fn mk_req_info(
                             recv,
                         )?;
 
-                        completions_stream_or_not(params.stream, info).await
+                        completions_stream_or_not(params.stream, info, None).await
                     } else {
                         Ok(AppError::from(anyhow!(
                                 "LoRA model {:?} was not in cache and load_lora_weights is set to never: {}", params.lora_model, err
@@ -1108,7 +1123,7 @@ async fn gather_response_chunks(mut client: ReqInfo) -> Result<(ReqInfo, Vec<Top
     Ok((client, logprobs))
 }
 
-async fn completions(mut client: ReqInfo) -> Result<Json<Value>, AppError> {
+async fn completions(mut client: ReqInfo, final_content: Option<Vec<u8>>) -> Result<Json<Value>, AppError> {
     let mut token = client.cancel_token();
     let mut logprobs = vec![];
 
@@ -1161,7 +1176,7 @@ async fn completions(mut client: ReqInfo) -> Result<Json<Value>, AppError> {
                 index,
                 message: ChatCompletionMessage {
                     role: Role::Assistant,
-                    content: Some(String::from_utf8_lossy(&fork.text).to_string()),
+                    content: Some(String::from_utf8_lossy(&final_content.clone().unwrap_or(fork.text)).to_string()),
                 },
                 finish_reason: fork.stop_reason.map(map_finish_reason),
                 llg_logs: if fork.logs.is_empty() {

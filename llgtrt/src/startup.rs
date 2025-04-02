@@ -284,7 +284,7 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
                 client_req_id: ClientReqId::new(1),
                 lora_params: None,
                 is_run: false,
-                draft_params: None  // TODO fill out
+                draft_params: None  
             },
             None,
             vec![],
