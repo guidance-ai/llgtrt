@@ -508,11 +508,11 @@ impl Responder {
                         )
                     };
 
-                    let generation_logits = if resp.logits_tensor.is_null() {
+                    let generation_logits = if resp.logits_tensor.data_ptr.is_null() {
                         None
                     } else {
                         Some(Tensor::from_tlc_tensor(&resp.logits_tensor))
-                    }
+                    };
 
                     ResponseChunk {
                         req_id: ReqId(resp.req_id),
