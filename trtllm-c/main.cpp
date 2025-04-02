@@ -449,11 +449,14 @@ TlcStatus tlc_await_responses(
                 resp_data.tokens = result.outputTokenIds.at(0);
 
                 // Grab generationLogits, TODO=need to see if nonstreaming/streaming matters here
-                auto generationLogits = result.generationLogits.value();
-                auto logitsShape = generationLogits.getShape();
-                assert(logitsShape[0] == 1);
-                resp_data.logitsTensor = tle::Tensor::cpu(generationLogits.getDataType(), {logitsShape[1], logitsShape[2]});
-                std::memcpy(resp_data.logitsTensor.getData(), generationLogits.getData(), generationLogits.getSizeInBytes());
+                if (result.generationLogits.has_value()) 
+                {
+                    auto generationLogits = result.generationLogits.value();
+                    auto logitsShape = generationLogits.getShape();
+                    assert(logitsShape[0] == 1);
+                    resp_data.logitsTensor = tle::Tensor::cpu(generationLogits.getDataType(), {logitsShape[1], logitsShape[2]});
+                    std::memcpy(resp_data.logitsTensor.getData(), generationLogits.getData(), generationLogits.getSizeInBytes());
+                }     
 
                 if (result.logProbs.has_value())
                 {
@@ -484,11 +487,17 @@ TlcStatus tlc_await_responses(
                 c_resp.num_tokens = data.tokens.size();
                 c_resp.tokens = data.tokens.data();
                 c_resp.num_logprobs = data.logprobs.size();
-                if (c_resp.num_logprobs > 0)
+                if (c_resp.num_logprobs > 0) 
+                {
                     c_resp.logprobs = data.logprobs.data();
-                c_resp.logits_tensor.data_type = to_tlc_datatype(data.logitsTensor.getDataType());
-                c_resp.logits_tensor.data_ptr = resp_data.logitsTensor.getData();
-                c_resp.logits_tensor.shape = _tle_to_tlc_shape(resp_data.logitsTensor.getShape());
+                }
+                
+                c_resp.logits_tensor.shape = _tle_to_tlc_shape(data.logitsTensor.getShape());
+                if (c_resp.logits_tensor.shape.num_dims > 0) 
+                {
+                    c_resp.logits_tensor.data_type = to_tlc_datatype(data.logitsTensor.getDataType());
+                    c_resp.logits_tensor.data_ptr = data.logitsTensor.getData();
+                }
             }
 
             ctx->responses.emplace_back(c_resp);
