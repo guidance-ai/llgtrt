@@ -552,14 +552,14 @@ async fn mk_req_info(
                     req_info_temp.tok_env.tok_trie().tokens_dbg(&cur_draft_tokens)
                 );
                 log::debug!(
-                    "Draft logits: {:?}",
+                    "Draft logits size: {:?}",
                     logits_tensor.size.iter().map(|&x| x as u32).collect::<Vec<u32>>()
                 );
                 debug_assert!(cur_draft_tokens.len() == n_draft_tokens_cur_iter); // TODO debug or rm
                 req_init.draft_params = Some(DraftParams {
-                    draft_tokens,
-                    logits_tensor: Some(logits_tensor), // TODO add logits later
-                    num_tokens: n_draft_tokens_cur_iter as u32  // TODO init correctly>
+                    draft_tokens: cur_draft_tokens.clone(),
+                    logits_tensor: Some(logits_tensor),
+                    num_tokens: cur_draft_tokens.len() as u32  // TODO init correctly>
                 });
                 req_info = Some(req_info_temp);
                 draft_tokens = Some(cur_draft_tokens);
@@ -1142,7 +1142,11 @@ async fn gather_response_chunks(mut client: ReqInfo) -> Result<(ReqInfo, Vec<Top
             if let Some(ref logits) = response.generation_logits {
                 if !logits.size.is_empty() && !logits.data.is_empty() {
                     logits_tensor = Tensor::from(logits.clone());
+                } else {
+                    log::debug!("no logits detected")
                 }
+            } else {
+                log::debug!("no logits detected")
             }
         }
 
