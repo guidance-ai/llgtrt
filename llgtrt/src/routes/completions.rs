@@ -521,6 +521,7 @@ async fn mk_req_info(
                     n_draft_tokens_cur_iter
                 );
                 req_init.params.max_new_tokens = n_draft_tokens_cur_iter as u32;  // TODO set min?
+                req_init.params.streaming = false; // Set to false for draft so that we can grab logits in one go.
                 let (req_id, recv) = AsyncExecutor::lock().add_draft_request(
                     &req_init,
                     req_input.prompt_params.clone(),  // TODO needed here?
@@ -543,7 +544,7 @@ async fn mk_req_info(
 
                 // TODO proper error handling,
                 // TODO this doesn't need return passed reqinfo
-                let (mut req_info_temp, _, logits_tensor) = gather_response_chunks(req_info.unwrap()).await?;
+                let (mut req_info_temp, _, mut logits_tensor) = gather_response_chunks(req_info.unwrap()).await?;
                 req_info_temp.usage.completion_tokens = n_draft_tokens_cur_iter;
                 let cur_draft_tokens = req_info_temp.tok_env.tokenize_bytes(&req_info_temp.forks[0].text);
 
@@ -551,14 +552,20 @@ async fn mk_req_info(
                     "Draft output: {}",
                     req_info_temp.tok_env.tok_trie().tokens_dbg(&cur_draft_tokens)
                 );
-                log::debug!(
-                    "Draft logits size: {:?}",
-                    logits_tensor.size.iter().map(|&x| x as u32).collect::<Vec<u32>>()
-                );
                 debug_assert!(cur_draft_tokens.len() == n_draft_tokens_cur_iter); // TODO debug or rm
+                if logits_tensor
+                    .as_ref()
+                    .and_then(|t| t.size.first().copied())
+                    .map(|first_dim| first_dim as usize != cur_draft_tokens.len())
+                    .unwrap_or(false)
+                {
+                    log::warn!("Logits tensor size does not match num tokens, not using logits.");
+                    logits_tensor = None;
+                }
+                
                 req_init.draft_params = Some(DraftParams {
                     draft_tokens: cur_draft_tokens.clone(),
-                    logits_tensor: Some(logits_tensor),
+                    logits_tensor: logits_tensor,
                     num_tokens: cur_draft_tokens.len() as u32  // TODO init correctly>
                 });
                 req_info = Some(req_info_temp);
@@ -569,6 +576,7 @@ async fn mk_req_info(
 
             let n_max_target_tokens = n_draft_tokens_cur_iter as u32 + 1;
             req_init.params.max_new_tokens = n_max_target_tokens;
+            req_init.params.streaming = true; // Set to true for target model so that we can stream the response.
             (req_id, recv) = AsyncExecutor::lock().add_request(
                 &req_init,
                 req_input.prompt_params.clone(),
@@ -1120,9 +1128,9 @@ async fn completions_stream(
     Ok(Sse::new(response_stream))
 }
 
-async fn gather_response_chunks(mut client: ReqInfo) -> Result<(ReqInfo, Vec<TopTokenLogProb>, Tensor), Error> {
+async fn gather_response_chunks(mut client: ReqInfo) -> Result<(ReqInfo, Vec<TopTokenLogProb>, Option<Tensor>), Error> {
     let mut logprobs = vec![];
-    let mut logits_tensor = Tensor::default();
+    let mut logits = vec![];
     while let Some(mut result) = client.recv.recv().await {
         log::trace!("infer response: {:?}", result.response);
         let response = &result.response;
@@ -1139,9 +1147,9 @@ async fn gather_response_chunks(mut client: ReqInfo) -> Result<(ReqInfo, Vec<Top
             if let Some(mut lp) = r.logprobs {
                 logprobs.append(&mut lp.content);
             }
-            if let Some(ref logits) = response.generation_logits {
-                if !logits.size.is_empty() && !logits.data.is_empty() {
-                    logits_tensor = Tensor::from(logits.clone());
+            if let Some(ref l) = response.generation_logits {
+                if !l.size.is_empty() && !l.data.is_empty() {
+                    logits.push(Tensor::from(l.clone())); // TODO: Revisit if we ensure only one logit will ever be returned.
                 } else {
                     log::debug!("no logits detected")
                 }
@@ -1156,6 +1164,12 @@ async fn gather_response_chunks(mut client: ReqInfo) -> Result<(ReqInfo, Vec<Top
         }
     }
 
+    for (i, logit) in logits.iter().enumerate() {
+        log::debug!("Logit {} shape: {:?}", i, logit.size.iter().map(|&x| x as u32).collect::<Vec<u32>>());
+    }
+
+    let logits_tensor = logits.get(0).cloned();
+    
     Ok((client, logprobs, logits_tensor))
 }
 
