@@ -22,4 +22,6 @@ fn main() {
     println!("cargo:rustc-link-lib=nvinfer_plugin_tensorrt_llm");
     println!("cargo:rustc-link-lib=cuda");
     println!("cargo:rustc-link-lib=cudart");
+
+    println!("cargo:rustc-link-lib=stdc++");
 }
