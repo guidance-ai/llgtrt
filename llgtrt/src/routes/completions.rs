@@ -545,7 +545,6 @@ async fn mk_req_info(
                 // TODO proper error handling,
                 // TODO this doesn't need return passed reqinfo
                 let (mut req_info_temp, _, mut logits_tensor) = gather_response_chunks(req_info.unwrap()).await?;
-                req_info_temp.usage.completion_tokens = n_draft_tokens_cur_iter;
                 let cur_draft_tokens = req_info_temp.tok_env.tokenize_bytes(&req_info_temp.forks[0].text);
 
                 log::debug!(
@@ -562,12 +561,13 @@ async fn mk_req_info(
                     log::warn!("Logits tensor size does not match num tokens, not using logits.");
                     logits_tensor = None;
                 }
-                
+
                 req_init.draft_params = Some(DraftParams {
                     draft_tokens: cur_draft_tokens.clone(),
                     logits_tensor: logits_tensor,
                     num_tokens: cur_draft_tokens.len() as u32  // TODO init correctly>
                 });
+
                 req_info = Some(req_info_temp);
                 draft_tokens = Some(cur_draft_tokens);
             } else {
@@ -635,8 +635,14 @@ async fn mk_req_info(
             );
             req_info = Some(req_info_temp);
 
+            // account for other stop conditions
+            if client.all_forks_stopped() {
+                break;
+            }
         }
+
         // TODO if req_info has gotten all info should skip inner gather loop?
+        // TODO need to redo n_completion_tokens for final req_info
         completions_stream_or_not(false, req_info.expect("no tokens generated"), Some(gen_bytes)).await
     } else {
         let (req_id, recv) = AsyncExecutor::lock().add_request(
@@ -1169,7 +1175,7 @@ async fn gather_response_chunks(mut client: ReqInfo) -> Result<(ReqInfo, Vec<Top
     }
 
     let logits_tensor = logits.get(0).cloned();
-    
+
     Ok((client, logprobs, logits_tensor))
 }
 

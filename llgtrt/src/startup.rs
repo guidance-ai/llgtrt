@@ -47,11 +47,15 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
     };
 
     // TODO keep trt params same for now
-    let mut draft_exec_config = cli_config.draft_engine.clone().map(|engine_path| ExecutorInit {
+    let mut draft_exec_config = cli_config.draft_engine.clone().map(|engine_path|{
+        let mut exec = ExecutorInit {
         engine_path: engine_path,
         logits_callback: None,
         trt_params: Default::default(),
-    });
+    };
+    exec.trt_params.enable_kv_cache_reuse = true;
+    exec
+});
 
     let defl_config_path = format!("{}/llgtrt.json5", cli_config.engine);
     if cli_config.config.is_empty() {
@@ -265,38 +269,66 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
     };
     let state = Arc::new(state);
 
-    if state.py_state.enabled {
-        log::info!("Skipping warmup due to python");
-    } else {
-        // TODO draft executor warmup call here
-        // warmup request
-        log::info!("Warming up executor");
-        let mut warmup_tokens =
-            state.tokenize_with_bos("The ultimate answer to life, the universe and everything is");
-        log::debug!("Warmup tokens: {:?}", warmup_tokens);
-        let (_, mut rx) = AsyncExecutor::lock().add_request(
-            &RequestInit {
-                tokens: warmup_tokens.clone(),
-                params: RequestParams {
-                    max_new_tokens: 10,
-                    ..Default::default()
-                },
-                client_req_id: ClientReqId::new(1),
-                lora_params: None,
-                is_run: false,
-                draft_params: None  
-            },
-            None,
-            vec![],
-        )?;
-        while let Some(r) = rx.recv().await {
-            warmup_tokens.extend_from_slice(&r.response.tokens);
-        }
-        log::info!(
-            "Warmup: {}",
-            state.tok_env.tok_trie().tokens_dbg(&warmup_tokens)
-        );
-    }
+    // if state.py_state.enabled {
+    //     log::info!("Skipping warmup due to python");
+    // } else {
+    //     if AsyncExecutor::lock().has_draft_model() {
+    //         log::info!("Warming up draft executor");
+    //         let mut warmup_tokens =
+    //             state.tokenize_with_bos("The ultimate answer to life, the universe and everything is");
+    //         log::debug!("Warmup tokens: {:?}", warmup_tokens);
+    //         let (_, mut rx) = AsyncExecutor::lock().add_draft_request(
+    //             &RequestInit {
+    //                 tokens: warmup_tokens.clone(),
+    //                 params: RequestParams {
+    //                     max_new_tokens: 10,
+    //                     ..Default::default()
+    //                 },
+    //                 client_req_id: ClientReqId::new(1),
+    //                 lora_params: None,
+    //                 is_run: false,
+    //                 draft_params: None
+    //             },
+    //             None,
+    //             vec![],
+    //         )?;
+    //         while let Some(r) = rx.recv().await {
+    //             warmup_tokens.extend_from_slice(&r.response.tokens);
+    //         }
+    //         log::info!(
+    //             "Warmup: {}",
+    //             state.tok_env.tok_trie().tokens_dbg(&warmup_tokens)
+    //         );
+    //     }
+    //     // TODO draft executor warmup call here
+    //     // warmup request
+    //     log::info!("Warming up executor");
+    //     let mut warmup_tokens =
+    //         state.tokenize_with_bos("The ultimate answer to life, the universe and everything is");
+    //     log::debug!("Warmup tokens: {:?}", warmup_tokens);
+    //     let (_, mut rx) = AsyncExecutor::lock().add_request(
+    //         &RequestInit {
+    //             tokens: warmup_tokens.clone(),
+    //             params: RequestParams {
+    //                 max_new_tokens: 10,
+    //                 ..Default::default()
+    //             },
+    //             client_req_id: ClientReqId::new(1),
+    //             lora_params: None,
+    //             is_run: false,
+    //             draft_params: None
+    //         },
+    //         None,
+    //         vec![],
+    //     )?;
+    //     while let Some(r) = rx.recv().await {
+    //         warmup_tokens.extend_from_slice(&r.response.tokens);
+    //     }
+    //     log::info!(
+    //         "Warmup: {}",
+    //         state.tok_env.tok_trie().tokens_dbg(&warmup_tokens)
+    //     );
+    // }
 
     let api_key = cli_config.api_key.clone();
 
