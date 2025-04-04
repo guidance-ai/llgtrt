@@ -636,7 +636,7 @@ async fn mk_req_info(
             req_info = Some(req_info_temp);
 
             // account for other stop conditions
-            if req_info.unwarp().all_forks_stopped() {
+            if req_info.unwrap().all_forks_stopped() {
                 break;
             }
         }
