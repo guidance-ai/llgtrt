@@ -272,34 +272,34 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
     if state.py_state.enabled {
         log::info!("Skipping warmup due to python");
     } else {
-        if AsyncExecutor::lock().has_draft_model() {
-            log::info!("Warming up draft executor");
-            let mut warmup_tokens =
-                state.tokenize_with_bos("The ultimate answer to life, the universe and everything is");
-            log::debug!("Warmup tokens: {:?}", warmup_tokens);
-            let (_, mut rx) = AsyncExecutor::lock().add_draft_request(
-                &RequestInit {
-                    tokens: warmup_tokens.clone(),
-                    params: RequestParams {
-                        max_new_tokens: 10,
-                        ..Default::default()
-                    },
-                    client_req_id: ClientReqId::new(1),
-                    lora_params: None,
-                    is_run: false,
-                    draft_params: None
-                },
-                None,
-                vec![],
-            )?;
-            while let Some(r) = rx.recv().await {
-                warmup_tokens.extend_from_slice(&r.response.tokens);
-            }
-            log::info!(
-                "Warmup: {}",
-                state.tok_env.tok_trie().tokens_dbg(&warmup_tokens)
-            );
-        }
+        // if AsyncExecutor::lock().has_draft_model() {
+        //     log::info!("Warming up draft executor");
+        //     let mut warmup_tokens =
+        //         state.tokenize_with_bos("The ultimate answer to life, the universe and everything is");
+        //     log::debug!("Warmup tokens: {:?}", warmup_tokens);
+        //     let (_, mut rx) = AsyncExecutor::lock().add_draft_request(
+        //         &RequestInit {
+        //             tokens: warmup_tokens.clone(),
+        //             params: RequestParams {
+        //                 max_new_tokens: 10,
+        //                 ..Default::default()
+        //             },
+        //             client_req_id: ClientReqId::new(1),
+        //             lora_params: None,
+        //             is_run: false,
+        //             draft_params: None
+        //         },
+        //         None,
+        //         vec![],
+        //     )?;
+        //     while let Some(r) = rx.recv().await {
+        //         warmup_tokens.extend_from_slice(&r.response.tokens);
+        //     }
+        //     log::info!(
+        //         "Warmup: {}",
+        //         state.tok_env.tok_trie().tokens_dbg(&warmup_tokens)
+        //     );
+        // }
         // TODO draft executor warmup call here
         // warmup request
         log::info!("Warming up executor");

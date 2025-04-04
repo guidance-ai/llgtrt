@@ -551,7 +551,12 @@ async fn mk_req_info(
                     "Draft output: {}",
                     req_info_temp.tok_env.tok_trie().tokens_dbg(&cur_draft_tokens)
                 );
-                debug_assert!(cur_draft_tokens.len() == n_draft_tokens_cur_iter); // TODO debug or rm
+
+                // TODO make this an assertion ideally?
+                if cur_draft_tokens.len() != n_draft_tokens_cur_iter {
+                    log::warn!("expected {} draft tokens got {}", n_draft_tokens_cur_iter, cur_draft_tokens.len())
+                }
+
                 if logits_tensor
                     .as_ref()
                     .and_then(|t| t.size.first().copied())
@@ -601,7 +606,11 @@ async fn mk_req_info(
             let mut target_tokens = req_info_temp.tok_env.tokenize_bytes(&req_info_temp.forks[0].text);
 
             if let Some(draft_tokens) = draft_tokens {
-                 let perc_draft_tokens_used = draft_tokens.len() as f32 - (target_tokens.len() - 1) as f32 / draft_tokens.len() as f32;
+                // draft tokens: [a, b, c, d, e]
+                // target tokens: [a, b, c, y]
+                // expect: 60% draft token usage
+                // sub 1 from target token length for token target model will always produce
+                 let perc_draft_tokens_used = 1.0 - (((draft_tokens.len() as f32) - ((target_tokens.len() - 1) as f32)) / (draft_tokens.len() as f32));
                  log::debug!(
                     "Target model used {}% of draft model tokens",
                     perc_draft_tokens_used
@@ -636,8 +645,8 @@ async fn mk_req_info(
             req_info = Some(req_info_temp);
 
             // account for other stop conditions
-            if let Some(stop_reason) = req_info.as_ref().unwrap().forks[0].stop_reason {
-                if stop_reason == FinishReason::EosToken || stop_reason == FinishReason::StopWords {
+            if let Some(stop_reason) = &req_info.as_ref().unwrap().forks[0].stop_reason {
+                if stop_reason == &FinishReason::EosToken || stop_reason == &FinishReason::StopWords {
                     break;
                 }
             }
