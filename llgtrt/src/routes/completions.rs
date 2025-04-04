@@ -20,7 +20,7 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc::UnboundedReceiver;
 use toktrie::TokEnv;
-use trtllm_rs::{ClientReqId, DraftParams, LoraParams, ReqId, RequestInit, RequestParams, Tensor, TlcDataType};
+use trtllm_rs::{ClientReqId, DraftParams, FinishReason, LoraParams, ReqId, RequestInit, RequestParams, Tensor, TlcDataType};
 use uuid::Uuid;
 
 use crate::async_exec::{map_finish_reason, AsyncExecutor, StepResults};
@@ -636,8 +636,10 @@ async fn mk_req_info(
             req_info = Some(req_info_temp);
 
             // account for other stop conditions
-            if req_info.unwrap().all_forks_stopped() {
-                break;
+            if let Some(stop_reason) = req_info.as_ref().unwrap().forks[0].stop_reason {
+                if stop_reason == FinishReason::EosToken || stop_reason == FinishReason::StopWords {
+                    break;
+                }
             }
         }
 
