@@ -645,7 +645,7 @@ async fn mk_req_info(
             req_info = Some(req_info_temp);
 
             // account for other stop conditions
-            if let Some(stop_reason) = &req_info.as_ref().unwrap().forks[0].stop_reason {
+            if let Some(mut stop_reason) = &req_info.as_ref().unwrap().forks[0].stop_reason {
                 if stop_reason == &FinishReason::EosToken || stop_reason == &FinishReason::StopWords {
                     break;
                 }
