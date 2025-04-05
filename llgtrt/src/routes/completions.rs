@@ -652,7 +652,7 @@ async fn mk_req_info(
             }
         }
 
-        if let Some(mut some) = req_info {
+        if let Some(ref mut some) = req_info {
             let n_gen_tokens = some.tok_env.tokenize_bytes(&gen_bytes).len();
             some.usage.completion_tokens = n_gen_tokens;
             some.usage.total_tokens = some.usage.prompt_tokens + n_gen_tokens;
