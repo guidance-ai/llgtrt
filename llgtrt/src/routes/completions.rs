@@ -505,7 +505,8 @@ async fn mk_req_info(
         let n_gen_tokens = req_init.params.max_new_tokens as usize;
         let total_len = start_len + n_gen_tokens;
         let n_draft_tokens = AsyncExecutor::lock().n_draft_tokens(); // TODO how long to do this
-        let mut req_info: Option<ReqInfo> = None;  // need as option due to loop
+        let mut target_req_info: Option<ReqInfo> = None;  // need as option due to loop
+        let mut draft_req_info: Option<ReqInfo> = None;  // need as option due to loop
         let mut gen_bytes: Vec<u8> = Vec::new();
         while req_init.tokens.len() < total_len {
             // handle case where there are less than n_draft_tokens + 1 needed
@@ -528,7 +529,7 @@ async fn mk_req_info(
                     llg.clone(),
                 )?;
 
-                req_info = Some(build_req_info(
+                draft_req_info = draft_req_info.or(Some(build_req_info(
                     req_id,
                     1,  // TODO how to handle num_return_sequences? keep as 1 for now
                     client_req_id,
@@ -540,11 +541,11 @@ async fn mk_req_info(
                     is_chat,
                     is_run,
                     recv,
-                )?);
+                )?));
 
                 // TODO proper error handling,
                 // TODO this doesn't need return passed reqinfo
-                let (mut req_info_temp, _, mut logits_tensor) = gather_response_chunks(req_info.unwrap()).await?;
+                let (mut req_info_temp, _, mut logits_tensor) = gather_response_chunks(draft_req_info.unwrap()).await?;
                 let cur_draft_tokens = req_info_temp.tok_env.tokenize_bytes(&req_info_temp.forks[0].text);
 
                 log::debug!(
@@ -573,7 +574,7 @@ async fn mk_req_info(
                     num_tokens: cur_draft_tokens.len() as u32  // TODO init correctly>
                 });
 
-                req_info = Some(req_info_temp);
+                draft_req_info = Some(req_info_temp);
                 draft_tokens = Some(cur_draft_tokens);
             } else {
                 req_init.draft_params = None; // clear from last time draft model was called
@@ -588,7 +589,7 @@ async fn mk_req_info(
                 llg.clone()
             )?;
 
-            req_info = Some(build_req_info(
+            target_req_info = target_req_info.or(Some(build_req_info(
                 req_id,
                 1, // TODO how to handle num_return_sequences? keep as 1 for now,
                 client_req_id,
@@ -600,9 +601,9 @@ async fn mk_req_info(
                 is_chat,
                 is_run,
                 recv,
-            )?);
+            )?));
 
-            let (mut req_info_temp, _, _) = gather_response_chunks(req_info.unwrap()).await?;
+            let (mut req_info_temp, _, _) = gather_response_chunks(target_req_info.unwrap()).await?;
             let mut target_tokens = req_info_temp.tok_env.tokenize_bytes(&req_info_temp.forks[0].text);
 
             if let Some(draft_tokens) = draft_tokens {
@@ -612,8 +613,8 @@ async fn mk_req_info(
                 // sub 1 from target token length for token target model will always produce
                  let perc_draft_tokens_used = 1.0 - (((draft_tokens.len() as f32) - ((target_tokens.len() - 1) as f32)) / (draft_tokens.len() as f32));
                  log::debug!(
-                    "Target model used {}% of draft model tokens",
-                    perc_draft_tokens_used
+                    "Target model used {:.2}% of draft model tokens",
+                    perc_draft_tokens_used * 100 as f32
                 );
             }
 
@@ -642,10 +643,10 @@ async fn mk_req_info(
                 "Req init output: {}",
                 req_info_temp.tok_env.tok_trie().tokens_dbg(&req_init.tokens)
             );
-            req_info = Some(req_info_temp);
+            target_req_info = Some(req_info_temp);
 
             // account for other stop conditions
-            if let Some(stop_reason) = &req_info.as_ref().unwrap().forks[0].stop_reason {
+            if let Some(stop_reason) = &target_req_info.as_ref().unwrap().forks[0].stop_reason {
                 if stop_reason == &FinishReason::EosToken || stop_reason == &FinishReason::StopWords {
                     break;
                 }
@@ -654,7 +655,7 @@ async fn mk_req_info(
 
         // TODO if req_info has gotten all info should skip inner gather loop?
         // TODO need to redo n_completion_tokens for final req_info
-        completions_stream_or_not(false, req_info.expect("no tokens generated"), Some(gen_bytes)).await
+        completions_stream_or_not(false, target_req_info.expect("no tokens generated"), Some(gen_bytes)).await
     } else {
         let (req_id, recv) = AsyncExecutor::lock().add_request(
             &req_init,
