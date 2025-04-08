@@ -511,7 +511,6 @@ async fn mk_req_info(
             // handle case where there are less than n_draft_tokens + 1 needed
             let n_gen_tokens_cur_iter: usize = min(n_draft_tokens as usize + 1, total_len - req_init.tokens.len());
             let n_draft_tokens_cur_iter = min(n_gen_tokens_cur_iter - 1, n_draft_tokens as usize);
-            let mut log_probs: Vec<TopTokenLogProb>;
             let mut req_id: ReqId;
             let mut recv;
             let mut draft_tokens = None;
@@ -626,9 +625,10 @@ async fn mk_req_info(
                 req_info_temp.tok_env.tok_trie().tokens_dbg(&target_tokens)
             );
 
+            let stop = target_tokens.is_empty() || target_tokens.iter().any(|t| t == &req_info_temp.tok_env.tok_trie().eos_token());
+
             req_init.tokens.append(&mut target_tokens);
             gen_bytes.append(&mut req_info_temp.forks[0].text);
-            // TODO double check gather_response_chunks return prompt tokens as well?
             req_init = build_request_init(
                 req_init.tokens,
                 req_params.clone(),
@@ -645,10 +645,8 @@ async fn mk_req_info(
             req_info = Some(req_info_temp);
 
             // account for other stop conditions
-            if let Some(stop_reason) = &req_info.as_ref().unwrap().forks[0].stop_reason {
-                if stop_reason == &FinishReason::EosToken || stop_reason == &FinishReason::StopWords {
-                    break;
-                }
+            if stop {
+                break
             }
         }
 
