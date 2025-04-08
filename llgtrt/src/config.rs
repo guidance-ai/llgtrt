@@ -74,7 +74,7 @@ impl Default for TrtLlmRuntimeConfig {
             max_queue_size: 0,
             enable_chunked_context: true,
             enable_kv_cache_reuse: true,
-            kv_cache_free_gpu_mem_fraction: 0.5,
+            kv_cache_free_gpu_mem_fraction: 0.9,
             kv_cache_host_memory_megabytes: 0,
             enable_batch_size_tuning: true,
             enable_max_num_tokens_tuning: true,
