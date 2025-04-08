@@ -3,8 +3,6 @@
 #include <cmath>
 #include <cassert>
 #include <cstdio>
-#include <iostream>
-#include <format>
 
 #include "tensorrt_llm/common/logger.h"
 #include "tensorrt_llm/executor/executor.h"
@@ -372,10 +370,9 @@ TlcStatus tlc_enqueue_request(TlcExecutor* ctx, TlcRequest const* request, TlcRe
             tle::Tensor logitsTensor;
             logitsTensor = _tlc_to_tle_tensor(dp.logits_tensor);
             assert(dp.num_tokens > 0);
-            auto acc_rate = (dp.acc_rate < 0.0) ? std::nullopt : std::optional<float>{dp.acc_rate};
             tle::VecTokens draftTokens(dp.draft_tokens, dp.draft_tokens + dp.num_tokens);
             tle::ExternalDraftTokensConfig draftTokensConfig(
-                std::move(draftTokens), logitsTensor, acc_rate, std::nullopt);
+                std::move(draftTokens), logitsTensor, std::nullopt, std::nullopt);
             req.setExternalDraftTokensConfig(draftTokensConfig);
         }
 
@@ -457,13 +454,9 @@ TlcStatus tlc_await_responses(
                 {
                     auto generationLogits = result.generationLogits.value();
                     auto logitsShape = generationLogits.getShape();
-
-                    if (logitsShape[0] == 1) {
-                        resp_data.logitsTensor = tle::Tensor::cpu(generationLogits.getDataType(), {logitsShape[1], logitsShape[2]});
-                        std::memcpy(resp_data.logitsTensor.getData(), generationLogits.getData(), generationLogits.getSizeInBytes());
-                    } else {
-                        std::cout << "generation logits shape first dim isn't 1\n" << std::endl;
-                    }
+                    assert(logitsShape[0] == 1);
+                    resp_data.logitsTensor = tle::Tensor::cpu(generationLogits.getDataType(), {logitsShape[1], logitsShape[2]});
+                    std::memcpy(resp_data.logitsTensor.getData(), generationLogits.getData(), generationLogits.getSizeInBytes());
                 }
 
                 if (result.logProbs.has_value())

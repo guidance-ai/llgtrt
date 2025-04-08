@@ -170,10 +170,6 @@ pub struct CliConfig {
     #[arg(long)]
     pub n_draft_tokens: Option<usize>,
 
-    // draft token acceptance rate for target model
-    #[arg(long)]
-    pub draft_token_acc_rate: Option<f32>,
-
     /// Debug output
     #[arg(long, short = 'd')]
     pub debug: bool,

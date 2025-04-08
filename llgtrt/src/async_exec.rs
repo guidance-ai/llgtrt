@@ -83,7 +83,6 @@ pub struct AsyncExecutor {
     req_to_client: HashMap<ReqId, ClientReqId>,
     req_data: HashMap<ClientReqId, ReqData>,
     n_draft_tokens: u32,  // TODO prob better location for this, esp if dynamically setting between calls
-    draft_token_acc_rate: Option<f32>,
 }
 
 static mut GLOBAL_ALLOCATOR: *const MaskAllocator = ptr::null();
@@ -375,17 +374,12 @@ impl AsyncExecutor {
         self.n_draft_tokens
     }
 
-    pub fn draft_token_acc_rate(&self) -> Option<f32> {
-        self.draft_token_acc_rate
-    }
-
     pub fn new(
         cli_config: &CliConfig,
         config: &LlgTrtConfig,
         mut executor_init: ExecutorInit,
         draft_executor_init: Option<ExecutorInit>,
-        n_draft_tokens: u32,
-        draft_token_acc_rate: Option<f32>
+        n_draft_tokens: u32
     ) -> Result<(Self, TokEnv, ChatBuilder)> {
         executor_init.logits_callback = Some(logits_processor);
         let mut max_batch_size = executor_init.trt_params.max_batch_size as usize;
@@ -420,7 +414,6 @@ impl AsyncExecutor {
             n_vocab,
             max_batch_size,
             n_draft_tokens,
-            draft_token_acc_rate,
         };
 
         rayon::spawn(

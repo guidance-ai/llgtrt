@@ -136,12 +136,11 @@ extern "C"
         TlcTensor config;
     } TlcLoraParams;
 
-    typedef struct
+    typedef struct 
     {
         int32_t* draft_tokens;
         uint32_t num_tokens;
         TlcTensor logits_tensor;
-        float acc_rate;
     } TlcDraftParams;
 
     typedef struct
