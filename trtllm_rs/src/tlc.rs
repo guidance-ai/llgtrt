@@ -142,9 +142,9 @@ pub struct LoraParams {
 
 #[derive(Debug, Clone, Default)]
 pub struct DraftParams {
-    pub draft_tokens: Vec<u32>,  // TODO needs to match vec token
-    pub num_tokens: u32,
-    pub logits_tensor: Option<Tensor>,  // needs
+    pub draft_tokens: Vec<u32>,
+    pub logits_tensor: Option<Tensor>,
+    pub acc_rate: Option<f32>,
 }
 
 #[derive(Debug, Clone)]
@@ -294,7 +294,8 @@ impl Default for ffi::TlcDraftParams {
         ffi::TlcDraftParams {
             draft_tokens: std::ptr::null_mut(),  // TODO default for raw pointer??
             num_tokens: 0,
-            logits_tensor: ffi::TlcTensor::default()
+            logits_tensor: ffi::TlcTensor::default(),
+            acc_rate: -1.0 // TODO make optional
         }
     }
 }
@@ -399,15 +400,13 @@ impl Executor {
 
         // Load draft params in request if we have any.
         if let Some(draft_params) = &init.draft_params {
-            let mut dp = ffi::TlcDraftParams {
+            arg.draft_params = ffi::TlcDraftParams {
                 draft_tokens: draft_params.draft_tokens.as_ptr() as *mut i32,
                 num_tokens: draft_params.draft_tokens.len() as u32,
-                logits_tensor: ffi::TlcTensor::default(),
+                logits_tensor: draft_params.logits_tensor.as_ref().map_or_else(|| ffi::TlcTensor::default(),
+                                                                               |logits| logits.as_tlc_tensor()),
+                acc_rate: draft_params.acc_rate.unwrap_or(-1.0),
             };
-            if let Some(logits) = &draft_params.logits_tensor {
-                dp.logits_tensor = logits.as_tlc_tensor();
-            }
-            arg.draft_params = dp;
         }
 
         let mut req_id = 0;

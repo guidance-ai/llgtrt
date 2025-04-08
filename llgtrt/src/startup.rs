@@ -223,7 +223,19 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
     }
 
     let n_draft_tokens = cli_config.n_draft_tokens.unwrap_or(5);
-    let (executor, tok_env, chat_builder) = AsyncExecutor::new(&cli_config, &config, exec_config, draft_exec_config, n_draft_tokens as u32)?;
+    if n_draft_tokens < 1 {
+        panic!("n_draft_tokens > 0")
+    }
+    log::info!("Number of draft tokens: {:?}", n_draft_tokens);
+
+    let draft_token_acc_rate = cli_config.draft_token_acc_rate;
+    if let Some(acc_rate) = draft_token_acc_rate {
+        if !(0.0 <= acc_rate || acc_rate <= 1.0) {
+            panic!("draft token acceptance rate must be between [0, 1]")
+        }
+        log::info!("Draft token acceptance rate {:?}", acc_rate);
+    }
+    let (executor, tok_env, chat_builder) = AsyncExecutor::new(&cli_config, &config, exec_config, draft_exec_config, n_draft_tokens as u32, draft_token_acc_rate)?;
 
     // we only get here on rank 0
 
