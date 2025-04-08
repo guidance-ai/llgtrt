@@ -342,7 +342,7 @@ fn build_request_init(
         client_req_id,
         is_run,
         lora_params,
-        draft_params: None  // TODO fill out
+        draft_params: None
     };
     Ok(request_init)
 }
@@ -507,6 +507,7 @@ async fn mk_req_info(
         let n_gen_tokens = req_init.params.max_new_tokens as usize;
         let total_len = start_len + n_gen_tokens;
         let n_draft_tokens = AsyncExecutor::lock().n_draft_tokens(); // TODO how long to do this
+        let draft_token_acc_rate = AsyncExecutor::lock().draft_token_acc_rate();
         let mut req_info: Option<ReqInfo> = None;  // need as option due to loop
         let mut gen_bytes: Vec<u8> = Vec::new();
         while req_init.tokens.len() < total_len {
@@ -521,6 +522,7 @@ async fn mk_req_info(
                     "Generate {} draft tokens",
                     n_draft_tokens_cur_iter
                 );
+
                 req_init.params.max_new_tokens = n_draft_tokens_cur_iter as u32;  // TODO set min?
                 req_init.params.streaming = false; // Set to false for draft so that we can grab logits in one go.
                 let (req_id, recv) = AsyncExecutor::lock().add_draft_request(
@@ -543,7 +545,6 @@ async fn mk_req_info(
                     recv,
                 )?);
 
-                // TODO proper error handling,
                 // TODO this doesn't need return passed reqinfo
                 let (mut req_info_temp, _, mut logits_tensor) = gather_response_chunks(req_info.unwrap()).await?;
                 let cur_draft_tokens = req_info_temp.tok_env.tokenize_bytes(&req_info_temp.forks[0].text);
@@ -571,7 +572,7 @@ async fn mk_req_info(
                 req_init.draft_params = Some(DraftParams {
                     draft_tokens: cur_draft_tokens.clone(),
                     logits_tensor: logits_tensor,
-                    num_tokens: cur_draft_tokens.len() as u32  // TODO init correctly>
+                    acc_rate: draft_token_acc_rate
                 });
 
                 req_info = Some(req_info_temp);
