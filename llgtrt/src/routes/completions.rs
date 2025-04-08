@@ -10,7 +10,7 @@ use axum::Json;
 use core::panic;
 use std::cmp::min;
 use futures_core::Stream;
-use llguidance::api::{GrammarWithLexer, TopLevelGrammar};
+use llguidance::api::{GrammarInit, GrammarWithLexer, TopLevelGrammar};
 use llguidance::Constraint;
 use safetensors::Dtype;
 use serde_json::{json, Value};
@@ -429,9 +429,11 @@ async fn mk_req_info(
     let cmpl_id = format!("{}-{}", if is_run { "run" } else { "cmpl" }, Uuid::new_v4());
 
     let llg = if let Some(grm) = llg_grammar(params)? {
-        let parser = app_state
-            .parser_factory
-            .create_parser_ext(grm, params.llg_log_level.to_log_level())?;
+        let parser = app_state.parser_factory.create_parser_from_init(
+            GrammarInit::Serialized(grm),
+            params.llg_log_level.to_log_level(),
+            app_state.parser_factory.stderr_log_level(),
+        )?;
 
         let mut llg = Constraint::new(parser);
 
@@ -780,7 +782,9 @@ pub async fn route_chat_completions(
 
         let lark_grm_templ = match &request.tool_choice {
             ToolChoice::Simple(ToolChoiceOption::None) => r"start: /(.|\n)*/",
-            ToolChoice::Simple(ToolChoiceOption::Auto) => r"start: /[^{](.|\n)*/ | {json_start} @json_schema",
+            ToolChoice::Simple(ToolChoiceOption::Auto) => {
+                r"start: /[^{](.|\n)*/ | {json_start} @json_schema"
+            }
             ToolChoice::Simple(ToolChoiceOption::Required) | ToolChoice::Advanced(_) => {
                 r"start: {json_start} @json_schema"
             }

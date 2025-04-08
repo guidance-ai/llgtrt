@@ -81,10 +81,9 @@ pub fn setup_tokenizer(
 
     let tokenizer = format!("{}/tokenizer.json", tokenizer_folder);
     log::info!("Loading tokenizer from {:?}", tokenizer);
-    let tok_env = toktrie_hf_tokenizers::ByteTokenizerEnv::from_name(
-        &tokenizer,
-        config.tokenizer.n_vocab_override,
-    )?;
+    let byte_tok = toktrie_hf_tokenizers::ByteTokenizer::from_file(&tokenizer)?;
+    let tok_env =
+        toktrie_hf_tokenizers::ByteTokenizerEnv::new(byte_tok, config.tokenizer.n_vocab_override)?;
     let tok_env: TokEnv = Arc::new(tok_env);
     let trie = tok_env.tok_trie();
     let mut info = trie.info().clone();

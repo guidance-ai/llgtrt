@@ -38,5 +38,5 @@ cd trtllm-c/build
 cmake -DUSE_CXX11_ABI=$USE_CXX11_ABI ..
 make -j
 cd ../../llgtrt
-export RUSTC_LOG=rustc_codegen_ssa::back::link=info
+# export RUSTC_LOG=rustc_codegen_ssa::back::link=info
 cargo build --release
