@@ -381,7 +381,7 @@ impl AsyncExecutor {
         draft_executor_init: Option<ExecutorInit>,
         n_draft_tokens: u32
     ) -> Result<(Self, TokEnv, ChatBuilder)> {
-        executor_init.logits_callback = Some(logits_processor);
+        // executor_init.logits_callback = Some(logits_processor);
         let mut max_batch_size = executor_init.trt_params.max_batch_size as usize;
         log::info!("new executor: max_batch_size={max_batch_size}");
         let (executor, mut responder) = Executor::new(executor_init)?;
