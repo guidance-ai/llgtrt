@@ -609,7 +609,7 @@ async fn mk_req_info(
                 recv,
             )?);
 
-            let (mut req_info_temp, _, _, mut target_tokens) = gather_response_chunks(req_info.unwrap()).await?;
+            let (mut req_info_temp, _, _, target_tokens) = gather_response_chunks(req_info.unwrap()).await?;
             //let mut target_tokens = req_info_temp.tok_env.tokenize_bytes(&req_info_temp.forks[0].text);
 
             if let Some(draft_tokens) = draft_tokens {
