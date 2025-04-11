@@ -569,6 +569,12 @@ async fn mk_req_info(
                     logits_tensor = None;
                 }
 
+                if let Some(tensor) = logits_tensor.as_ref() {
+                    for (i, dim) in tensor.size.iter().enumerate() {
+                        log::debug!("Draft logits tensor dim[{}]: {}", i, dim);
+                    }
+                }
+
                 req_init.draft_params = Some(DraftParams {
                     draft_tokens: cur_draft_tokens.clone(),
                     logits_tensor: logits_tensor,
@@ -612,7 +618,8 @@ async fn mk_req_info(
                 // target tokens: [a, b, c, y]
                 // expect: 60% draft token usage
                 // sub 1 from target token length for token target model will always produce
-                 let perc_draft_tokens_used = 1.0 - (((draft_tokens.len() as f32) - ((target_tokens.len() - 1) as f32)) / (draft_tokens.len() as f32));
+                let accepted = draft_tokens.iter().zip(&target_tokens).take_while(|(a, b)| a == b).count();
+                let perc_draft_tokens_used = accepted as f32 / draft_tokens.len() as f32;
                  log::debug!(
                     "Target model used {:.2}% of draft model tokens",
                     perc_draft_tokens_used * 100 as f32
