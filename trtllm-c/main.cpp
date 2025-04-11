@@ -375,7 +375,7 @@ TlcStatus tlc_enqueue_request(TlcExecutor* ctx, TlcRequest const* request, TlcRe
             auto acc_rate = (dp.acc_rate < 0.0) ? std::nullopt : std::optional<float>{dp.acc_rate};
             tle::VecTokens draftTokens(dp.draft_tokens, dp.draft_tokens + dp.num_tokens);
             tle::ExternalDraftTokensConfig draftTokensConfig(
-                std::move(draftTokens), logitsTensor, acc_rate, std::nullopt);
+                std::move(draftTokens), std::nullopt, acc_rate, std::nullopt);
             req.setExternalDraftTokensConfig(draftTokensConfig);
         }
 

@@ -546,7 +546,7 @@ async fn mk_req_info(
                 )?);
 
                 // TODO this doesn't need return passed reqinfo
-                let (mut req_info_temp, _, mut logits_tensor) = gather_response_chunks(req_info.unwrap()).await?;
+                let (mut req_info_temp, _, mut logits_tensor, mut cur_draft_tokens) = gather_response_chunks(req_info.unwrap()).await?;
                 let cur_draft_tokens = req_info_temp.tok_env.tokenize_bytes(&req_info_temp.forks[0].text);
 
                 log::debug!(
@@ -604,7 +604,7 @@ async fn mk_req_info(
                 recv,
             )?);
 
-            let (mut req_info_temp, _, _) = gather_response_chunks(req_info.unwrap()).await?;
+            let (mut req_info_temp, _, _, mut target_tokens) = gather_response_chunks(req_info.unwrap()).await?;
             let mut target_tokens = req_info_temp.tok_env.tokenize_bytes(&req_info_temp.forks[0].text);
 
             if let Some(draft_tokens) = draft_tokens {
@@ -629,9 +629,8 @@ async fn mk_req_info(
             );
 
             let stop = target_tokens.is_empty() || target_tokens.iter().any(|t| t == &req_info_temp.tok_env.tok_trie().eos_token());
-
+            gen_bytes.append(&mut req_info_temp.tok_env.tok_trie().decode(&target_tokens));
             req_init.tokens.append(&mut target_tokens);
-            gen_bytes.append(&mut req_info_temp.forks[0].text);
             req_init = build_request_init(
                 req_init.tokens,
                 req_params.clone(),
@@ -1154,9 +1153,10 @@ async fn completions_stream(
     Ok(Sse::new(response_stream))
 }
 
-async fn gather_response_chunks(mut client: ReqInfo) -> Result<(ReqInfo, Vec<TopTokenLogProb>, Option<Tensor>), Error> {
+async fn gather_response_chunks(mut client: ReqInfo) -> Result<(ReqInfo, Vec<TopTokenLogProb>, Option<Tensor>, Vec<u32>), Error> {
     let mut logprobs = vec![];
     let mut logits = vec![];
+    let mut tokens = Vec::new();
     while let Some(mut result) = client.recv.recv().await {
         log::trace!("infer response: {:?}", result.response);
         let response = &result.response;
@@ -1168,6 +1168,8 @@ async fn gather_response_chunks(mut client: ReqInfo) -> Result<(ReqInfo, Vec<Top
         } else {
             client.usage.completion_tokens += response.tokens.len();
             client.usage.total_tokens += response.tokens.len();
+            log::debug!("tokens from gather: {:?}", response.tokens);
+            tokens.append(&mut response.tokens.clone());
             let response = result.response.clone(); // Clone the response to avoid borrowing conflicts
             let r = client.update_text(&mut result, false);
             if let Some(mut lp) = r.logprobs {
@@ -1182,6 +1184,7 @@ async fn gather_response_chunks(mut client: ReqInfo) -> Result<(ReqInfo, Vec<Top
             } else {
                 log::debug!("no logits detected")
             }
+
         }
 
         if client.all_forks_stopped() {
@@ -1196,7 +1199,7 @@ async fn gather_response_chunks(mut client: ReqInfo) -> Result<(ReqInfo, Vec<Top
 
     let logits_tensor = logits.get(0).cloned();
 
-    Ok((client, logprobs, logits_tensor))
+    Ok((client, logprobs, logits_tensor, tokens))
 }
 
 async fn completions(mut client: ReqInfo, final_content: Option<Vec<u8>>) -> Result<Json<Value>, AppError> {
@@ -1205,7 +1208,7 @@ async fn completions(mut client: ReqInfo, final_content: Option<Vec<u8>>) -> Res
 
     // TODO this should skip this if gather_response_chunks was called already
     if client.all_forks_stopped() {
-        (client, logprobs, _) = gather_response_chunks(client).await?;
+        (client, logprobs, _, _) = gather_response_chunks(client).await?;
     }
     // while let Some(mut result) = client.recv.recv().await {
     //     log::trace!("infer response: {:?}", result.response);
