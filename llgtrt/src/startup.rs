@@ -173,6 +173,8 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
             config.runtime = serde_json::from_reader(std::fs::File::open(runtime_config)?)
                 .map_err(|e| anyhow!("error loading runtime.json: {}", e))?;
             log::info!("Loaded runtime config from {:?}", config.runtime);
+        } else {
+            log::info!("Using default runtime config {:?}", config.runtime);
         }
     }
 

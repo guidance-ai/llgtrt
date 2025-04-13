@@ -15,67 +15,53 @@ const CONFIG_OPTIONS: &str = "Configuration files handling";
 pub struct TrtLlmRuntimeConfig {
     /// Make the scheduler more conservative, so that a started request is never evicted.
     /// Defaults to false (which improves throughput)
-    #[serde(default)]
     pub guaranteed_no_evict: bool,
 
     /// Maximum number of concurrent requests
-    #[serde(default)]
     pub max_batch_size: usize,
 
     /// Maximum number of tokens in batch
-    #[serde(default)]
     pub max_num_tokens: usize,
 
     /// Maximum number of requests in queue (when batch already full)
-    #[serde(default)]
     pub max_queue_size: usize,
 
     /// Chunk prefill/generation into pieces
     /// Defaults to true (unlike trtllm)
-    #[serde(default)]
     pub enable_chunked_context: bool,
 
     /// Prefix-caching (LRU-reuse blocks between requests)
     /// Defaults to true (unlike trtllm)
-    #[serde(default)]
     pub enable_kv_cache_reuse: bool,
 
     /// Fraction of free GPU memory to use for KV cache
-    #[serde(default)]
     pub kv_cache_free_gpu_mem_fraction: f32,
 
     /// Host memory to use for KV cache
-    #[serde(default)]
     pub kv_cache_host_memory_megabytes: usize,
 
     /// Controls whether offloaded blocks should be onboarded back into primary memory before being reused.
     /// Defaults to true.
-    #[serde(default)]
     pub kv_cache_onboard_blocks: bool,
 
     /// The fraction of the KV Cache memory should be reserved for cross attention
     /// If set to p, self attention will use 1-p of KV Cache memory and cross attention
     /// will use p of KV Cache memory.
     /// Should only be set when using encoder-decoder model.
-    #[serde(default)]
     pub cross_kv_cache_fraction: Option<f32>,
 
     /// Only blocks with priority > mSecondaryOfflineMinPriority can be offloaded to secondary memory.
-    #[serde(default)]
     pub secondary_offload_min_priority: Option<i32>,
 
     /// Max size of the KV cache event buffer
-    #[serde(default)]
     pub event_buffer_max_size: Option<usize>,
 
     /// Control automatic tuning of batch size
     /// Defaults to true (unlike trtllm)
-    #[serde(default)]
     pub enable_batch_size_tuning: bool,
 
     /// Control automatic tuning of max num tokens
     /// Defaults to true (unlike trtllm)
-    #[serde(default)]
     pub enable_max_num_tokens_tuning: bool,
 }
 
@@ -88,7 +74,7 @@ impl Default for TrtLlmRuntimeConfig {
             max_queue_size: 0,
             enable_chunked_context: true,
             enable_kv_cache_reuse: true,
-            kv_cache_free_gpu_mem_fraction: 0.5,
+            kv_cache_free_gpu_mem_fraction: 0.9,
             kv_cache_host_memory_megabytes: 0,
             enable_batch_size_tuning: true,
             enable_max_num_tokens_tuning: true,
