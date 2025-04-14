@@ -41,7 +41,7 @@ docker run \
     --ipc=host \
     --runtime=nvidia \
     --privileged \
-    --gpus all \
+    --gpus=0 \
     --shm-size=8g \
     --publish $PORT:$PORT \
     -d \

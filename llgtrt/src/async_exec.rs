@@ -465,6 +465,7 @@ impl AsyncExecutor {
                         }
                     } else {
                         log::warn!("Response for unknown request: {:?}", req_id);
+                        log::debug!("Tokens for unknown request {:?}: {:?}", req_id, resp.tokens);
                         let _ = exec.executor.cancel_request(req_id);
                     }
                 }
