@@ -74,7 +74,7 @@ impl Default for TrtLlmRuntimeConfig {
             max_queue_size: 0,
             enable_chunked_context: true,
             enable_kv_cache_reuse: true,
-            kv_cache_free_gpu_mem_fraction: 0.5,
+            kv_cache_free_gpu_mem_fraction: 0.9,
             kv_cache_host_memory_megabytes: 0,
             enable_batch_size_tuning: true,
             enable_max_num_tokens_tuning: true,
@@ -195,6 +195,10 @@ pub struct CliConfig {
     /// <engine>/llgtrt.json5 if it exists
     #[arg(long, short = 'C', help_heading = CONFIG_OPTIONS)]
     pub config: Vec<String>,
+
+    /// Path to runtime config file; defaults to <engine>/runtime.json if it exists
+    #[arg(long, help_heading = CONFIG_OPTIONS)]
+    pub runtime_config: Option<String>,
 
     /// Path to chat template file; defaults to <engine>/chat_template.j2 if it exists
     /// Overrides values in all configs.

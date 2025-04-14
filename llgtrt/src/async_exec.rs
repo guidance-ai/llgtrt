@@ -405,6 +405,11 @@ impl AsyncExecutor {
 
         // TODO need to do this for draft executor?
         // on non-0 ranks, this will just wait until the rank 0 exits and then exit the process
+        if let Some(draft_executor) = &draft_executor {
+            log::info!("Checking draft executor MPI");
+            draft_executor.check_mpi();
+        }
+        log::info!("Checking target executor MPI");
         executor.check_mpi();
 
         // only setup tokenizer on rank 0

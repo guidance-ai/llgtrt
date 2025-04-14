@@ -373,9 +373,19 @@ TlcStatus tlc_enqueue_request(TlcExecutor* ctx, TlcRequest const* request, TlcRe
             logitsTensor = _tlc_to_tle_tensor(dp.logits_tensor);
             assert(dp.num_tokens > 0);
             auto acc_rate = (dp.acc_rate < 0.0) ? std::nullopt : std::optional<float>{dp.acc_rate};
+            std::ostringstream oss;
+            oss << "Setting external config with draft logits shape: [";
+            for (size_t i = 0; i < logitsTensor.getShape().size(); ++i)
+            {
+                oss << logitsTensor.getShape()[i];
+                if (i + 1 < logitsTensor.getShape().size())
+                    oss << ", ";
+            }
+            oss << "]";
+            TLLM_LOG_INFO("%s", oss.str().c_str());
             tle::VecTokens draftTokens(dp.draft_tokens, dp.draft_tokens + dp.num_tokens);
             tle::ExternalDraftTokensConfig draftTokensConfig(
-                std::move(draftTokens), std::nullopt, acc_rate, std::nullopt);
+                std::move(draftTokens), std::nullopt, acc_rate, std::nullopt); //TODO: Figure out logits
             req.setExternalDraftTokensConfig(draftTokensConfig);
         }
 
@@ -452,8 +462,14 @@ TlcStatus tlc_await_responses(
                 assert(result.outputTokenIds.size() == 1);
                 resp_data.tokens = result.outputTokenIds.at(0);
 
-                // Grab generationLogits, TODO=need to see if nonstreaming/streaming matters here
-                if (result.generationLogits.has_value())
+                // Grab generationLogits, TODO=need to see if nonstreaming/streaming matters here, figure out fastlogits
+                if (result.specDecFastLogitsInfo.has_value())
+                {
+                    TLLM_LOG_INFO("Using fast logits");
+                    auto const& logitsInfo = result.specDecFastLogitsInfo.value();
+                    resp_data.logitsTensor = logitsInfo.toTensor();
+                }
+                else if (result.generationLogits.has_value())
                 {
                     auto generationLogits = result.generationLogits.value();
                     auto logitsShape = generationLogits.getShape();

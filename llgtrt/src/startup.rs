@@ -46,17 +46,6 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
         trt_params: Default::default(),
     };
 
-    // TODO keep trt params same for now
-    let mut draft_exec_config = cli_config.draft_engine.clone().map(|engine_path|{
-        let mut exec = ExecutorInit {
-        engine_path: engine_path,
-        logits_callback: None,
-        trt_params: Default::default(),
-    };
-    exec.trt_params.enable_kv_cache_reuse = true;
-    exec
-});
-
     let defl_config_path = format!("{}/llgtrt.json5", cli_config.engine);
     if cli_config.config.is_empty() {
         if std::fs::exists(&defl_config_path).unwrap_or(false) {
@@ -172,8 +161,39 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
         }
     }
 
+    if cli_config.print_config {
+        log::info!("Skipping runtime config load");
+    } else {
+        let runtime_config = cli_config
+            .runtime_config
+            .clone()
+            .unwrap_or_else(|| format!("{}/runtime.json", cli_config.engine));
+        log::info!("Checking for separate runtime config in {:?}", runtime_config);
+        if std::fs::exists(&runtime_config)? {
+            config.runtime = serde_json::from_reader(std::fs::File::open(runtime_config)?)
+                .map_err(|e| anyhow!("error loading runtime.json: {}", e))?;
+            log::info!("Loaded runtime config from {:?}", config.runtime);
+        } else {
+            log::info!("Using default runtime config {:?}", config.runtime);
+        }
+    }
+
+    // Use default or user-specified runtime.json.
     let runtime_config = &config.runtime;
     let p = &mut exec_config.trt_params;
+
+    // TODO keep trt params same for now
+    let mut draft_exec_config = cli_config.draft_engine.clone().map(|engine_path|{
+        let mut exec = ExecutorInit {
+            engine_path: engine_path,
+            logits_callback: None,
+            trt_params: Default::default(),
+        };
+        exec.trt_params.enable_kv_cache_reuse = true;
+        exec.trt_params.kv_cache_free_gpu_mem_fraction = runtime_config.kv_cache_free_gpu_mem_fraction;
+        log::info!("Draft kv_cache_free_gpu_mem_fraction: {:?}", exec.trt_params.kv_cache_free_gpu_mem_fraction);
+        exec
+    });
 
     macro_rules! set_field {
         ($fld:ident) => {
@@ -211,6 +231,8 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
     if draft_exec_config.is_some() {
         // make sure this is set to if using draft model
         p.enable_kv_cache_reuse = true;
+        p.kv_cache_free_gpu_mem_fraction = runtime_config.kv_cache_free_gpu_mem_fraction;
+        log::info!("Target kv_cache_free_gpu_mem_fraction: {:?}", p.kv_cache_free_gpu_mem_fraction);
     }
 
     log::info!("Initializing executor with config: {:?}", exec_config);

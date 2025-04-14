@@ -566,6 +566,12 @@ async fn mk_req_info(
                     logits_tensor = None;
                 }
 
+                if let Some(tensor) = logits_tensor.as_ref() {
+                    for (i, dim) in tensor.size.iter().enumerate() {
+                        log::debug!("Draft logits tensor dim[{}]: {}", i, dim);
+                    }
+                }
+
                 req_init.draft_params = Some(DraftParams {
                     draft_tokens: cur_draft_tokens.clone(),
                     logits_tensor: logits_tensor,
