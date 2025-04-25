@@ -611,7 +611,7 @@ dependencies = [
 
 [[package]]
 name = "derivre"
-version = "0.3.4"
+version = "0.3.7"
 dependencies = [
  "ahash",
  "anyhow",
@@ -1518,7 +1518,7 @@ dependencies = [
 
 [[package]]
 name = "llguidance"
-version = "0.7.11"
+version = "0.7.19"
 dependencies = [
  "anyhow",
  "derivre",
@@ -1537,7 +1537,7 @@ dependencies = [
 
 [[package]]
 name = "llguidance_py"
-version = "0.7.11"
+version = "0.7.19"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -2050,9 +2050,9 @@ dependencies = [
 
 [[package]]
 name = "pyo3"
-version = "0.23.4"
+version = "0.24.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57fe09249128b3173d092de9523eaa75136bf7ba85e0d69eca241c7939c933cc"
+checksum = "e5203598f366b11a02b13aa20cab591229ff0a89fd121a308a5df751d5fc9219"
 dependencies = [
  "anyhow",
  "cfg-if",
@@ -2070,9 +2070,9 @@ dependencies = [
 
 [[package]]
 name = "pyo3-build-config"
-version = "0.23.4"
+version = "0.24.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1cd3927b5a78757a0d71aa9dff669f903b1eb64b54142a9bd9f757f8fde65fd7"
+checksum = "99636d423fa2ca130fa5acde3059308006d46f98caac629418e53f7ebb1e9999"
 dependencies = [
  "once_cell",
  "target-lexicon",
@@ -2080,9 +2080,9 @@ dependencies = [
 
 [[package]]
 name = "pyo3-ffi"
-version = "0.23.4"
+version = "0.24.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dab6bb2102bd8f991e7749f130a70d05dd557613e39ed2deeee8e9ca0c4d548d"
+checksum = "78f9cf92ba9c409279bc3305b5409d90db2d2c22392d443a87df3a1adad59e33"
 dependencies = [
  "libc",
  "pyo3-build-config",
@@ -2090,9 +2090,9 @@ dependencies = [
 
 [[package]]
 name = "pyo3-macros"
-version = "0.23.4"
+version = "0.24.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "91871864b353fd5ffcb3f91f2f703a22a9797c91b9ab497b1acac7b07ae509c7"
+checksum = "0b999cb1a6ce21f9a6b147dcf1be9ffedf02e0043aec74dc390f3007047cecd9"
 dependencies = [
  "proc-macro2",
  "pyo3-macros-backend",
@@ -2102,9 +2102,9 @@ dependencies = [
 
 [[package]]
 name = "pyo3-macros-backend"
-version = "0.23.4"
+version = "0.24.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "43abc3b80bc20f3facd86cd3c60beed58c3e2aa26213f3cda368de39c60a27e4"
+checksum = "822ece1c7e1012745607d5cf0bcb2874769f0f7cb34c4cde03b9358eb9ef911a"
 dependencies = [
  "heck",
  "proc-macro2",
@@ -2705,9 +2705,9 @@ dependencies = [
 
 [[package]]
 name = "target-lexicon"
-version = "0.12.16"
+version = "0.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "61c41af27dd6d1e27b1b16b489db798443478cef1f06a660c96db617ba5de3b1"
+checksum = "e502f78cdbb8ba4718f566c418c52bc729126ffd16baee5baa718cf25dd5a69a"
 
 [[package]]
 name = "tempfile"
@@ -2867,7 +2867,7 @@ dependencies = [
 
 [[package]]
 name = "toktrie"
-version = "0.7.11"
+version = "0.7.19"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -2878,7 +2878,7 @@ dependencies = [
 
 [[package]]
 name = "toktrie_hf_downloader"
-version = "0.7.11"
+version = "0.7.19"
 dependencies = [
  "anyhow",
  "hf-hub",
@@ -2889,7 +2889,7 @@ dependencies = [
 
 [[package]]
 name = "toktrie_hf_tokenizers"
-version = "0.7.11"
+version = "0.7.19"
 dependencies = [
  "anyhow",
  "log",
