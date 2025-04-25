@@ -7,7 +7,7 @@ SELF=./scripts/trtbld.sh
 CACHE=${CACHE:-/root/trt-cache}
 MODEL=${MODEL:-Meta-Llama-3.1-8B-Instruct}
 MODEL_TYPE=${MODEL_TYPE:-llama}
-LLAMA_EXAMPLE=$(pwd)/TensorRT-LLM/examples/$MODEL_TYPE
+LLAMA_EXAMPLE=$(pwd)/TensorRT-LLM/examples/models/core/$MODEL_TYPE
 MODEL_SRC=$CACHE/$MODEL-hf
 
 CKPT=$CACHE/$MODEL-ckpt

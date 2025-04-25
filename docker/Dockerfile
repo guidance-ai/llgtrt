@@ -41,7 +41,8 @@ RUN mkdir -p /tmp/reqs
 
 # if this fails, run 'git submodule update --init' first
 
-COPY TensorRT-LLM/examples/llama/requirements.txt /tmp/reqs/
+COPY TensorRT-LLM/examples/constraints.txt /tmp/reqs/requirements.txt
+# COPY TensorRT-LLM/requirements.txt /tmp/reqs/
 # COPY TensorRT-LLM/docker/common/install_mpi4py.sh /tmp/reqs/
 # COPY TensorRT-LLM/docker/common/install_tensorrt.sh /tmp/reqs/
 
@@ -66,8 +67,6 @@ RUN pip install \
  pandas matplotlib plotly wheel && \
  pip uninstall -y guidance && \
  rm -rf /root/.cache/pip
-
-RUN pip install --upgrade transformers
 
 # TODO test this
 # RUN pip install flash-attn --no-build-isolation
