@@ -46,6 +46,13 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
         trt_params: Default::default(),
     };
 
+    // TODO keep trt params same for now
+    let mut draft_exec_config = cli_config.draft_engine.clone().map(|engine_path| ExecutorInit {
+        engine_path: engine_path,
+        logits_callback: None,
+        trt_params: Default::default(),
+    });
+
     let defl_config_path = format!("{}/llgtrt.json5", cli_config.engine);
     if cli_config.config.is_empty() {
         if std::fs::exists(&defl_config_path).unwrap_or(false) {
@@ -64,6 +71,7 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
     if cli_config.print_config {
         log::info!("Skipping tokenizer config load");
     } else {
+        // TODO target & draft must have same token tokenizer? do sanity check here?
         let tokenizer_folder = cli_config.tokenizer.as_ref().unwrap_or(&cli_config.engine);
         let tokenizer_config = format!("{}/tokenizer_config.json", tokenizer_folder);
         log::info!("Loading tokenizer config from {:?}", tokenizer_config);
@@ -196,6 +204,12 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
     set_field_opt!(event_buffer_max_size);
     p.kv_cache_host_memory_bytes = runtime_config.kv_cache_host_memory_megabytes * 1024 * 1024;
 
+    if draft_exec_config.is_some() {
+        // make sure this is set to if using draft model
+        p.enable_kv_cache_reuse = True;
+        p.n_draft_tokens = Some(5)
+    }
+
     log::info!("Initializing executor with config: {:?}", exec_config);
 
     if cli_config.test_py {
@@ -205,7 +219,7 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let (executor, tok_env, chat_builder) = AsyncExecutor::new(&cli_config, &config, exec_config)?;
+    let (executor, tok_env, chat_builder) = AsyncExecutor::new(&cli_config, &config, exec_config, draft_exec_config)?;
 
     // we only get here on rank 0
 
@@ -254,6 +268,7 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
     if state.py_state.enabled {
         log::info!("Skipping warmup due to python");
     } else {
+        // TODO draft executor warmup call here
         // warmup request
         log::info!("Warming up executor");
         let mut warmup_tokens =
@@ -269,6 +284,7 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
                 client_req_id: ClientReqId::new(1),
                 lora_params: None,
                 is_run: false,
+                draft_params: None  // TODO fill out
             },
             None,
             vec![],

@@ -25,7 +25,7 @@ async fn main() -> anyhow::Result<()> {
             // for every request when running with mpirun
             // env::set_var("TLLM_LOG_LEVEL", "INFO");
         }
-    }
+    }   
 
     llgtrt::logging::init_log(llgtrt::logging::LogMode::Normal)?;
 

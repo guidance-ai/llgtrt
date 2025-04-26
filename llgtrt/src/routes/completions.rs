@@ -8,6 +8,7 @@ use axum::response::sse::{Event, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 use core::panic;
+use std::iter::zip;
 use futures_core::Stream;
 use llguidance::api::{GrammarInit, GrammarWithLexer, TopLevelGrammar};
 use llguidance::Constraint;
@@ -19,7 +20,7 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc::UnboundedReceiver;
 use toktrie::TokEnv;
-use trtllm_rs::{ClientReqId, LoraParams, ReqId, RequestInit, RequestParams, Tensor, TlcDataType};
+use trtllm_rs::{ClientReqId, DraftParams, LoraParams, ReqId, RequestInit, RequestParams, Tensor, TlcDataType};
 use uuid::Uuid;
 
 use crate::async_exec::{map_finish_reason, AsyncExecutor, StepResults};
@@ -341,6 +342,7 @@ fn build_request_init(
         client_req_id,
         is_run,
         lora_params,
+        draft_params: None  // TODO fill out
     };
     Ok(request_init)
 }
@@ -412,7 +414,7 @@ async fn mk_req_info(
     log::debug!("{}", app_state.tok_env.tok_trie().tokens_dbg(&tokens));
 
     let eos_token = if is_chat {
-        app_state.tok_eos_chat
+        app_state.tok_eos_chatreq_input
     } else {
         app_state.tok_eos_completions
     };
@@ -486,7 +488,7 @@ async fn mk_req_info(
         LoadLoraWeightsOption::Always => true,
         LoadLoraWeightsOption::Never => false,
     };
-    let req_init = build_request_init(
+    let mut req_init = build_request_init(
         tokens.clone(),
         req_params.clone(),
         client_req_id,
@@ -497,74 +499,153 @@ async fn mk_req_info(
     )?;
     let prompt_tokens = req_init.tokens.len();
 
-    let (req_id, recv) = AsyncExecutor::lock().add_request(
-        &req_init,
-        req_input.prompt_params.clone(),
-        llg.clone(),
-    )?;
+    // TODO draft executor call
+    if AsyncExecutor::lock().has_draft_model() {
+        // TODO override  n draft tokens to execute
+        let start_len = req_init.tokens.len();
+        let n_gen_tokens = req_init.params.max_new_tokens;
+        let n_draft_tokens = AsyncExecutor::lock(); // TODO how long to do this
+        while req_init.tokens.len() < start_len + n_gen_tokens {
+            req_init.params.max_new_tokens = n_draft_toknes;  // TODO set min?
+            let (req_id, recv) = AsyncExecutor::lock().add_draft_request(
+                &req_init,
+                req_input.prompt_params.clone(),  // TODO needed here?
+                llg.clone(),
+            )?;
 
-    let info = build_req_info(
-        req_id,
-        n_forks,
-        client_req_id,
-        cmpl_id.clone(),
-        &prompt,
-        prompt_tokens,
-        params,
-        &app_state.tok_env,
-        is_chat,
-        is_run,
-        recv,
-    )?;
+            let mut req_info = build_req_info(
+                req_id,
+                n_forks,
+                client_req_id,
+                cmpl_id.clone(),
+                &prompt,
+                prompt_tokens,
+                params,
+                &app_state.tok_env,
+                is_chat,
+                is_run,
+                recv,
+            )?;
 
-    match completions_stream_or_not(params.stream, info).await {
-        Ok(r) => Ok(r),
-        Err(err) => {
-            if is_lora_cache_miss_error(&err) {
-                log::warn!("LoRA cache miss: {}", err);
+            // TODO proper error handling,
+            // TODO need to pass full req_info
+            // TODO this doesn't need return passed reqinfo
+            req_info.usage.completion_tokens = n_draft_tokens;
+            let log_probs: Vec<TopTokenLogProb>;
+            (req_info, log_probs) = gather_response_chunks(req_info).await?;
+            let (tokens, logits) = log_probs.iter().map(|top| (top.chosen.token, top.chosen.logprob)).unzip();
+            req_init.draft_params = Some(DraftParams {
+                draft_tokens: tokens,
+                logits_tensor: logits  // TODO init correctly
+            });
 
-                // If necessary, retry with LoRA weights set
-                if params.load_lora_weights == LoadLoraWeightsOption::Auto {
-                    log::info!("Retrying with LoRA weights set");
-                    let req_init = build_request_init(
-                        tokens.clone(),
-                        req_params.clone(),
-                        client_req_id,
-                        is_run,
-                        &params,
-                        app_state,
-                        true,
-                    )?;
-                    let prompt_tokens = req_init.tokens.len();
+            req_init.params.max_new_tokens = n_draft_tokens + 1;  // TODO double check this
+            (req_id, recv) = AsyncExecutor::lock().add_request(
+                &req_init,
+                req_input.prompt_params.clone(),
+                llg.clone()
+            )?;
 
-                    let (req_id, recv) = AsyncExecutor::lock().add_request(
-                        &req_init,
-                        req_input.prompt_params.clone(),
-                        llg.clone(),
-                    )?;
+            req_info = build_req_info(
+                req_id,
+                n_forks,
+                client_req_id,
+                cmpl_id.clone(),
+                &prompt,
+                prompt_tokens,
+                params,
+                &app_state.tok_env,
+                is_chat,
+                is_run,
+                recv,
+            )?;
 
-                    let info = build_req_info(
-                        req_id,
-                        n_forks,
-                        client_req_id,
-                        cmpl_id.clone(),
-                        &prompt,
-                        prompt_tokens,
-                        params,
-                        &app_state.tok_env,
-                        is_chat,
-                        is_run,
-                        recv,
-                    )?;
+            (req_info, log_probs) = gather_response_chunks(req_info).await?;
+            let (target_tokens, _) = log_probs.iter().map(|top| (top.chosen.token, top.chosen.logprob)).unzip();
+            // TODO double check gather_response_chunks return prompt tokens as well?
+            req_init = build_request_init(
+                req_init.tokens + target_tokens,
+                req_params.clone(),
+                client_req_id,
+                is_run,
+                &params,
+                app_state,
+                load_lora_weights,
+            )?;
+        }
 
-                    completions_stream_or_not(params.stream, info).await
+        // TODO if req_info has gotten all info should skip inner gather loop?
+        completions_stream_or_not(False, req_info).await
+    } else {
+        let (req_id, recv) = AsyncExecutor::lock().add_request(
+            &req_init,
+            req_input.prompt_params.clone(),
+            llg.clone(),
+        )?;
+
+        let info = build_req_info(
+            req_id,
+            n_forks,
+            client_req_id,
+            cmpl_id.clone(),
+            &prompt,
+            prompt_tokens,
+            params,
+            &app_state.tok_env,
+            is_chat,
+            is_run,
+            recv,
+        )?;
+
+        match completions_stream_or_not(params.stream, info).await {
+            Ok(r) => Ok(r),
+            Err(err) => {
+                if is_lora_cache_miss_error(&err) {
+                    log::warn!("LoRA cache miss: {}", err);
+
+                    // If necessary, retry with LoRA weights set
+                    if params.load_lora_weights == LoadLoraWeightsOption::Auto {
+                        log::info!("Retrying with LoRA weights set");
+                        let req_init = build_request_init(
+                            tokens.clone(),
+                            req_params.clone(),
+                            client_req_id,
+                            is_run,
+                            &params,
+                            app_state,
+                            true,
+                        )?;
+                        let prompt_tokens = req_init.tokens.len();
+
+                        let (req_id, recv) = AsyncExecutor::lock().add_request(
+                            &req_init,
+                            req_input.prompt_params.clone(),
+                            llg.clone(),
+                        )?;
+
+                        let info = build_req_info(
+                            req_id,
+                            n_forks,
+                            client_req_id,
+                            cmpl_id.clone(),
+                            &prompt,
+                            prompt_tokens,
+                            params,
+                            &app_state.tok_env,
+                            is_chat,
+                            is_run,
+                            recv,
+                        )?;
+
+                        completions_stream_or_not(params.stream, info).await
+                    } else {
+                        Ok(AppError::from(anyhow!(
+                                "LoRA model {:?} was not in cache and load_lora_weights is set to never: {}", params.lora_model, err
+                            )).into_response())
+                    }
                 } else {
-                    Ok(AppError::from(anyhow!(
-                            "LoRA model {:?} was not in cache and load_lora_weights is set to never: {}", params.lora_model, err
-                        )).into_response())
+                    Ok(err.into_response())
                 }
-            } else {
-                Ok(err.into_response())
             }
         }
     }
@@ -987,8 +1068,7 @@ async fn completions_stream(
     Ok(Sse::new(response_stream))
 }
 
-async fn completions(mut client: ReqInfo) -> Result<Json<Value>, AppError> {
-    let mut token = client.cancel_token();
+async fn gather_response_chunks(mut client: ReqInfo) -> Result<(ReqInfo, Vec<TopTokenLogProb>), Error> {
     let mut logprobs = vec![];
     while let Some(mut result) = client.recv.recv().await {
         log::trace!("infer response: {:?}", result.response);
@@ -1012,6 +1092,36 @@ async fn completions(mut client: ReqInfo) -> Result<Json<Value>, AppError> {
             break;
         }
     }
+
+    Ok((client, logprobs))
+}
+
+async fn completions(mut client: ReqInfo) -> Result<Json<Value>, AppError> {
+    let mut token = client.cancel_token();
+    // let mut logprobs = vec![];
+    (client, log_probs) = gather_response_chunks(client)?;
+    // while let Some(mut result) = client.recv.recv().await {
+    //     log::trace!("infer response: {:?}", result.response);
+    //     let response = &result.response;
+    //     if let Some(err) = &response.error {
+    //         let err = anyhow::anyhow!("{}", err);
+    //         log::error!("received error message (rest): {}", err);
+    //         let _ = AsyncExecutor::lock().cancel_request(client.req_id);
+    //         return Err(err.into());
+    //     } else {
+    //         client.usage.completion_tokens += response.tokens.len();
+    //         client.usage.total_tokens += response.tokens.len();
+    //         let r = client.update_text(&mut result, false);
+    //         if let Some(mut lp) = r.logprobs {
+    //             logprobs.append(&mut lp.content);
+    //         }
+    //     }
+
+    //     if client.all_forks_stopped() {
+    //         let _ = AsyncExecutor::lock().cancel_request(client.req_id);
+    //         break;
+    //     }
+    // }
 
     let created = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
     let id = format!("cmpl-{}", Uuid::new_v4());

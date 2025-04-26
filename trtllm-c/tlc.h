@@ -136,6 +136,13 @@ extern "C"
         TlcTensor config;
     } TlcLoraParams;
 
+    typedef struct 
+    {
+        int32_t* draft_tokens;
+        uint32_t num_tokens;
+        TlcTensor logits_tensor;
+    } TlcDraftParams;
+
     typedef struct
     {
         bool use_logits_post_processor;
@@ -182,6 +189,7 @@ extern "C"
         TlcRequestParams params;
         TlcLoraParams lora_params;
         TlcPromptParams prompt_params;
+        TlcDraftParams draft_params;
     } TlcRequest;
 
     /// @brief The reason why the model stopped generating tokens for a request.
@@ -215,6 +223,7 @@ extern "C"
         int32_t const* tokens;
         uint32_t num_logprobs;
         float const* logprobs;
+        TlcTensor generation_logits;
     } TlcResponse;
 
     typedef struct TlcExecutor TlcExecutor;
