@@ -81,7 +81,7 @@ impl Default for TrtLlmRuntimeConfig {
             kv_cache_onboard_blocks: true,
             cross_kv_cache_fraction: None,
             secondary_offload_min_priority: None,
-            event_buffer_max_size: None,
+            event_buffer_max_size: None
         }
     }
 }
@@ -158,6 +158,22 @@ pub struct CliConfig {
     #[arg(long, short = 'T')]
     pub tokenizer: Option<String>,
 
+    /// Path to a compiled TensorRT-LLM draft engine
+    #[arg(long)]
+    pub draft_engine: Option<String>,
+
+    /// Path to folder with HF tokenizer.json and tokenizer_config.json files for draft engine; defaults to ---draft-engine
+    #[arg(long)]
+    pub draft_tokenizer: Option<String>,
+
+    // default number of tokens to execute from draft model
+    #[arg(long)]
+    pub n_draft_tokens: Option<usize>,
+
+    // draft token acceptance rate for target model
+    #[arg(long)]
+    pub draft_token_acc_rate: Option<f32>,
+
     /// Debug output
     #[arg(long, short = 'd')]
     pub debug: bool,
@@ -179,6 +195,10 @@ pub struct CliConfig {
     /// <engine>/llgtrt.json5 if it exists
     #[arg(long, short = 'C', help_heading = CONFIG_OPTIONS)]
     pub config: Vec<String>,
+
+    /// Path to runtime config file; defaults to <engine>/runtime.json if it exists
+    #[arg(long, help_heading = CONFIG_OPTIONS)]
+    pub runtime_config: Option<String>,
 
     /// Path to chat template file; defaults to <engine>/chat_template.j2 if it exists
     /// Overrides values in all configs.

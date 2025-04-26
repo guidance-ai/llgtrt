@@ -64,6 +64,7 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
     if cli_config.print_config {
         log::info!("Skipping tokenizer config load");
     } else {
+        // TODO target & draft must have same token tokenizer? do sanity check here?
         let tokenizer_folder = cli_config.tokenizer.as_ref().unwrap_or(&cli_config.engine);
         let tokenizer_config = format!("{}/tokenizer_config.json", tokenizer_folder);
         log::info!("Loading tokenizer config from {:?}", tokenizer_config);
@@ -160,8 +161,39 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
         }
     }
 
+    if cli_config.print_config {
+        log::info!("Skipping runtime config load");
+    } else {
+        let runtime_config = cli_config
+            .runtime_config
+            .clone()
+            .unwrap_or_else(|| format!("{}/runtime.json", cli_config.engine));
+        log::info!("Checking for separate runtime config in {:?}", runtime_config);
+        if std::fs::exists(&runtime_config)? {
+            config.runtime = serde_json::from_reader(std::fs::File::open(runtime_config)?)
+                .map_err(|e| anyhow!("error loading runtime.json: {}", e))?;
+            log::info!("Loaded runtime config from {:?}", config.runtime);
+        } else {
+            log::info!("Using default runtime config {:?}", config.runtime);
+        }
+    }
+
+    // Use default or user-specified runtime.json.
     let runtime_config = &config.runtime;
     let p = &mut exec_config.trt_params;
+
+    // TODO keep trt params same for now
+    let mut draft_exec_config = cli_config.draft_engine.clone().map(|engine_path|{
+        let mut exec = ExecutorInit {
+            engine_path: engine_path,
+            logits_callback: None,
+            trt_params: Default::default(),
+        };
+        exec.trt_params.enable_kv_cache_reuse = true;
+        exec.trt_params.kv_cache_free_gpu_mem_fraction = runtime_config.kv_cache_free_gpu_mem_fraction;
+        log::info!("Draft kv_cache_free_gpu_mem_fraction: {:?}", exec.trt_params.kv_cache_free_gpu_mem_fraction);
+        exec
+    });
 
     macro_rules! set_field {
         ($fld:ident) => {
@@ -196,6 +228,13 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
     set_field_opt!(event_buffer_max_size);
     p.kv_cache_host_memory_bytes = runtime_config.kv_cache_host_memory_megabytes * 1024 * 1024;
 
+    if draft_exec_config.is_some() {
+        // make sure this is set to if using draft model
+        p.enable_kv_cache_reuse = true;
+        p.kv_cache_free_gpu_mem_fraction = runtime_config.kv_cache_free_gpu_mem_fraction;
+        log::info!("Target kv_cache_free_gpu_mem_fraction: {:?}", p.kv_cache_free_gpu_mem_fraction);
+    }
+
     log::info!("Initializing executor with config: {:?}", exec_config);
 
     if cli_config.test_py {
@@ -205,7 +244,20 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let (executor, tok_env, chat_builder) = AsyncExecutor::new(&cli_config, &config, exec_config)?;
+    let n_draft_tokens = cli_config.n_draft_tokens.unwrap_or(5);
+    if n_draft_tokens < 1 {
+        panic!("n_draft_tokens > 0")
+    }
+    log::info!("Number of draft tokens: {:?}", n_draft_tokens);
+
+    let draft_token_acc_rate = cli_config.draft_token_acc_rate;
+    if let Some(acc_rate) = draft_token_acc_rate {
+        if !(0.0 <= acc_rate || acc_rate <= 1.0) {
+            panic!("draft token acceptance rate must be between [0, 1]")
+        }
+        log::info!("Draft token acceptance rate {:?}", acc_rate);
+    }
+    let (executor, tok_env, chat_builder) = AsyncExecutor::new(&cli_config, &config, exec_config, draft_exec_config, n_draft_tokens as u32, draft_token_acc_rate)?;
 
     // we only get here on rank 0
 
@@ -254,6 +306,35 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
     if state.py_state.enabled {
         log::info!("Skipping warmup due to python");
     } else {
+        // if AsyncExecutor::lock().has_draft_model() {
+        //     log::info!("Warming up draft executor");
+        //     let mut warmup_tokens =
+        //         state.tokenize_with_bos("The ultimate answer to life, the universe and everything is");
+        //     log::debug!("Warmup tokens: {:?}", warmup_tokens);
+        //     let (_, mut rx) = AsyncExecutor::lock().add_draft_request(
+        //         &RequestInit {
+        //             tokens: warmup_tokens.clone(),
+        //             params: RequestParams {
+        //                 max_new_tokens: 10,
+        //                 ..Default::default()
+        //             },
+        //             client_req_id: ClientReqId::new(1),
+        //             lora_params: None,
+        //             is_run: false,
+        //             draft_params: None
+        //         },
+        //         None,
+        //         vec![],
+        //     )?;
+        //     while let Some(r) = rx.recv().await {
+        //         warmup_tokens.extend_from_slice(&r.response.tokens);
+        //     }
+        //     log::info!(
+        //         "Warmup: {}",
+        //         state.tok_env.tok_trie().tokens_dbg(&warmup_tokens)
+        //     );
+        // }
+        // TODO draft executor warmup call here
         // warmup request
         log::info!("Warming up executor");
         let mut warmup_tokens =
@@ -269,6 +350,7 @@ pub async fn run_server(mut cli_config: CliConfig) -> anyhow::Result<()> {
                 client_req_id: ClientReqId::new(1),
                 lora_params: None,
                 is_run: false,
+                draft_params: None
             },
             None,
             vec![],

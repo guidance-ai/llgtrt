@@ -8,6 +8,7 @@ use axum::response::sse::{Event, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 use core::panic;
+use std::cmp::min;
 use futures_core::Stream;
 use llguidance::api::{GrammarInit, GrammarWithLexer, TopLevelGrammar};
 use llguidance::Constraint;
@@ -17,9 +18,9 @@ use std::fmt::Display;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tokio::sync::mpsc::UnboundedReceiver;
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use toktrie::TokEnv;
-use trtllm_rs::{ClientReqId, LoraParams, ReqId, RequestInit, RequestParams, Tensor, TlcDataType};
+use trtllm_rs::{ClientReqId, DraftParams, LoraParams, ReqId, RequestInit, RequestParams, Tensor, TlcDataType};
 use uuid::Uuid;
 
 use crate::async_exec::{map_finish_reason, AsyncExecutor, StepResults};
@@ -341,6 +342,7 @@ fn build_request_init(
         client_req_id,
         is_run,
         lora_params,
+        draft_params: None
     };
     Ok(request_init)
 }
@@ -391,11 +393,12 @@ fn build_req_info(
 async fn completions_stream_or_not(
     stream: bool,
     info: ReqInfo,
+    final_content: Option<Vec<u8>>
 ) -> Result<Response<Body>, AppError> {
     if stream {
         completions_stream(info).await.map(|r| r.into_response())
     } else {
-        completions(info).await.map(|r| r.into_response())
+        completions(info, final_content).await.map(|r| r.into_response())
     }
 }
 
@@ -409,7 +412,7 @@ async fn mk_req_info(
     let mut req_params = req_params_from_openai(params)?;
     let mut tokens = req_input.tokens;
     let prompt = req_input.prompt;
-    log::debug!("{}", app_state.tok_env.tok_trie().tokens_dbg(&tokens));
+    log::debug!("First input prompt {}", app_state.tok_env.tok_trie().tokens_dbg(&tokens));
 
     let eos_token = if is_chat {
         app_state.tok_eos_chat
@@ -486,7 +489,7 @@ async fn mk_req_info(
         LoadLoraWeightsOption::Always => true,
         LoadLoraWeightsOption::Never => false,
     };
-    let req_init = build_request_init(
+    let mut req_init = build_request_init(
         tokens.clone(),
         req_params.clone(),
         client_req_id,
@@ -497,74 +500,257 @@ async fn mk_req_info(
     )?;
     let prompt_tokens = req_init.tokens.len();
 
-    let (req_id, recv) = AsyncExecutor::lock().add_request(
-        &req_init,
-        req_input.prompt_params.clone(),
-        llg.clone(),
-    )?;
+    if AsyncExecutor::lock().has_draft_model() {
+        // TODO override  n draft tokens to execute
+        let start_len = req_init.tokens.len();
+        let n_gen_tokens = req_init.params.max_new_tokens as usize;
+        let total_len = start_len + n_gen_tokens;
+        let n_draft_tokens = AsyncExecutor::lock().n_draft_tokens() as usize; // TODO how long to do this
+        let draft_token_acc_rate = AsyncExecutor::lock().draft_token_acc_rate();
+        let mut req_info: Option<ReqInfo> = None;  // need as option due to loop
+        let mut avg_draft_acc_rate = 0.0;
+        let mut gen_bytes: Vec<u8> = Vec::new();
+        let mut n_draft_reqs = 0.0;
+        let mut num_tokens_left = total_len - req_init.tokens.len();
+        while num_tokens_left > 0 {
+            // handle case where there are less than n_draft_tokens + 1 needed
+            let mut req_id: ReqId;
+            let mut recv: UnboundedReceiver<StepResults>;
+            let mut draft_tokens = None;
+            if num_tokens_left >= n_draft_tokens { // if only need 1 token just skip to target
+                req_init.params.max_new_tokens = n_draft_tokens as u32;  // TODO set min?
+                req_init.params.streaming = false; // Set to false for draft so that we can grab logits in one go.
 
-    let info = build_req_info(
-        req_id,
-        n_forks,
-        client_req_id,
-        cmpl_id.clone(),
-        &prompt,
-        prompt_tokens,
-        params,
-        &app_state.tok_env,
-        is_chat,
-        is_run,
-        recv,
-    )?;
+                let (draft_req_id, recv) =  AsyncExecutor::lock().add_draft_request(
+                    &req_init,
+                    req_input.prompt_params.clone(),  // TODO needed here?
+                    llg.clone(),
+                )?;
 
-    match completions_stream_or_not(params.stream, info).await {
-        Ok(r) => Ok(r),
-        Err(err) => {
-            if is_lora_cache_miss_error(&err) {
-                log::warn!("LoRA cache miss: {}", err);
+                req_info = Some(build_req_info(
+                    draft_req_id,
+                    1,  // TODO how to handle num_return_sequences? keep as 1 for now
+                    client_req_id,
+                    cmpl_id.clone(),
+                    &prompt,
+                    prompt_tokens,
+                    params,
+                    &app_state.tok_env,
+                    is_chat,
+                    is_run,
+                    recv,
+                )?);
 
-                // If necessary, retry with LoRA weights set
-                if params.load_lora_weights == LoadLoraWeightsOption::Auto {
-                    log::info!("Retrying with LoRA weights set");
-                    let req_init = build_request_init(
-                        tokens.clone(),
-                        req_params.clone(),
-                        client_req_id,
-                        is_run,
-                        &params,
-                        app_state,
-                        true,
-                    )?;
-                    let prompt_tokens = req_init.tokens.len();
+                // TODO this doesn't need return passed reqinfo
+                let (mut req_info_temp, _, mut logits_tensor, cur_draft_tokens) = gather_response_chunks(req_info.unwrap()).await?;
+                // let cur_draft_tokens = req_info_temp.tok_env.tokenize_bytes(&req_info_temp.forks[0].text);
+                AsyncExecutor::lock().cancel_request(draft_req_id);
 
-                    let (req_id, recv) = AsyncExecutor::lock().add_request(
-                        &req_init,
-                        req_input.prompt_params.clone(),
-                        llg.clone(),
-                    )?;
+                log::debug!("{} {} - Want {} draft tokens", client_req_id, draft_req_id, n_draft_tokens);
+                log::debug!("{} {} - Got {} draft tokens", client_req_id, draft_req_id, &cur_draft_tokens.len());
+                log::debug!("{} {} - Draft tokens: {:?}", client_req_id, draft_req_id, &cur_draft_tokens);
+                log::debug!("{} {} - Draft output: {}", client_req_id, draft_req_id, req_info_temp.tok_env.tok_trie().tokens_dbg(&cur_draft_tokens));
 
-                    let info = build_req_info(
-                        req_id,
-                        n_forks,
-                        client_req_id,
-                        cmpl_id.clone(),
-                        &prompt,
-                        prompt_tokens,
-                        params,
-                        &app_state.tok_env,
-                        is_chat,
-                        is_run,
-                        recv,
-                    )?;
-
-                    completions_stream_or_not(params.stream, info).await
-                } else {
-                    Ok(AppError::from(anyhow!(
-                            "LoRA model {:?} was not in cache and load_lora_weights is set to never: {}", params.lora_model, err
-                        )).into_response())
+                // TODO make this an assertion ideally?
+                if cur_draft_tokens.len() as usize != n_draft_tokens {
+                    log::warn!("{} {} - expected {} draft tokens got {}", client_req_id, draft_req_id, n_draft_tokens, cur_draft_tokens.len())
                 }
+
+                if logits_tensor
+                    .as_ref()
+                    .and_then(|t| t.size.first().copied())
+                    .map(|first_dim| first_dim as usize != cur_draft_tokens.len())
+                    .unwrap_or(false)
+                {
+                    log::warn!("{} {} - Logits tensor size does not match num tokens, not using logits.", client_req_id, draft_req_id);
+                    logits_tensor = None;
+                }
+
+                if let Some(tensor) = logits_tensor.as_ref() {
+                    for (i, dim) in tensor.size.iter().enumerate() {
+                        log::debug!("Draft logits tensor dim[{}]: {}", i, dim);
+                    }
+                }
+
+                req_init.draft_params = Some(DraftParams {
+                    draft_tokens: cur_draft_tokens.clone(),
+                    logits_tensor: logits_tensor,
+                    acc_rate: draft_token_acc_rate
+                });
+
+                req_info = Some(req_info_temp);
+                draft_tokens = Some(cur_draft_tokens);
             } else {
-                Ok(err.into_response())
+                req_init.draft_params = None; // clear from last time draft model was called
+            }
+
+            let n_max_target_tokens = match draft_tokens.as_ref() {
+                Some(tokens) => (tokens.len() + 1) as u32,
+                None => {
+                    req_init.params.min_tokens = num_tokens_left as u32;
+                    num_tokens_left as u32
+                }
+            };
+
+            req_init.params.max_new_tokens = n_max_target_tokens;
+            req_init.params.streaming = true; // Set to true for target model so that we can stream the response.
+            let (target_req_id, recv) = AsyncExecutor::lock().add_request(
+                &req_init,
+                req_input.prompt_params.clone(),
+                llg.clone()
+            )?;
+
+            req_info = Some(build_req_info(
+                target_req_id,
+                1, // TODO how to handle num_return_sequences? keep as 1 for now,
+                client_req_id,
+                cmpl_id.clone(),
+                &prompt,
+                prompt_tokens,
+                params,
+                &app_state.tok_env,
+                is_chat,
+                is_run,
+                recv,
+            )?);
+
+            let (mut req_info_temp, _, _, mut target_tokens) = gather_response_chunks(req_info.unwrap()).await?;
+
+            let stop = if !target_tokens.is_empty() {
+                if let Some(draft_tokens) = draft_tokens {
+                    if draft_tokens.len() == 0 {
+                        log::debug!("{} - No draft tokens to compare target model against", client_req_id);
+                    } else {
+                        // draft tokens: [a, b, c, d, e], target tokens: [a, b, c, y]
+                        // expect: 60% draft token usage
+                        // sub 1 from target token length for token target model will always produce
+                        let perc_draft_tokens_used = 1.0 - (((draft_tokens.len() as f32) - ((target_tokens.len() - 1) as f32)) / (draft_tokens.len() as f32));
+                        log::debug!("{} {} - Target model used {:.2}% of draft model tokens", client_req_id, target_req_id, perc_draft_tokens_used * 100 as f32);
+
+                        // TODO weight this
+                        if draft_tokens.len() as usize == n_draft_tokens {
+                            avg_draft_acc_rate += perc_draft_tokens_used;
+                            n_draft_reqs += 1.0;
+                            log::debug!("{} {} - Averge draft acceptance rate: {}", client_req_id, target_req_id, (avg_draft_acc_rate / n_draft_reqs) * 100 as f32);
+                        } else {
+                            log::debug!("{} {} - More or few draft tokens than required amount for adjusting avg acc rate", client_req_id, target_req_id);
+                        }
+                    }
+                }
+
+                log::debug!("{} {} - Want {} target tokens", client_req_id, target_req_id, n_max_target_tokens);
+                log::debug!("{} {} - Got {} target tokens", client_req_id, target_req_id, &target_tokens.len());
+                log::debug!("{} {} - Target tokens: {:?}", client_req_id, target_req_id, &target_tokens);
+                log::debug!("{} {} - Target output: {}", client_req_id, target_req_id, req_info_temp.tok_env.tok_trie().tokens_dbg(&target_tokens));
+
+                let eos_found = target_tokens.iter().any(|t| t == &req_info_temp.tok_env.tok_trie().eos_token());
+                num_tokens_left -= target_tokens.len();
+                gen_bytes.append(&mut req_info_temp.tok_env.tok_trie().decode(&target_tokens));
+                req_init.tokens.append(&mut target_tokens);
+                req_init = build_request_init(
+                    req_init.tokens,
+                    req_params.clone(),
+                    client_req_id,
+                    is_run,
+                    &params,
+                    app_state,
+                    load_lora_weights,
+                )?;
+
+                log::debug!("{} {} - Req init output of {} tokens: {}", client_req_id, target_req_id, req_init.tokens.len(), req_info_temp.tok_env.tok_trie().tokens_dbg(&req_init.tokens));
+                eos_found
+            } else {
+                log::debug!("{} {} - no tokens from target executor, breaking", client_req_id, target_req_id);
+                true
+            };
+
+            req_info = Some(req_info_temp);
+
+            if stop {
+                break
+            }
+        }
+
+        if let Some(ref mut some) = req_info {
+            let n_gen_tokens = some.tok_env.tokenize_bytes(&gen_bytes).len();
+            some.usage.completion_tokens = n_gen_tokens;
+            some.usage.total_tokens = some.usage.prompt_tokens + n_gen_tokens;
+        }
+
+        log::debug!("{} - Averge draft acceptance rate: {}", client_req_id, (avg_draft_acc_rate / n_draft_reqs) * 100 as f32);
+        // TODO if req_info has gotten all info should skip inner gather loop?
+        // TODO need to redo n_completion_tokens for final req_info
+        completions_stream_or_not(false, req_info.expect("no tokens generated"), Some(gen_bytes)).await
+    } else {
+        let (req_id, recv) = AsyncExecutor::lock().add_request(
+            &req_init,
+            req_input.prompt_params.clone(),
+            llg.clone(),
+        )?;
+
+        let info = build_req_info(
+            req_id,
+            n_forks,
+            client_req_id,
+            cmpl_id.clone(),
+            &prompt,
+            prompt_tokens,
+            params,
+            &app_state.tok_env,
+            is_chat,
+            is_run,
+            recv,
+        )?;
+
+        match completions_stream_or_not(params.stream, info, None).await {
+            Ok(r) => Ok(r),
+            Err(err) => {
+                if is_lora_cache_miss_error(&err) {
+                    log::warn!("LoRA cache miss: {}", err);
+
+                    // If necessary, retry with LoRA weights set
+                    if params.load_lora_weights == LoadLoraWeightsOption::Auto {
+                        log::info!("Retrying with LoRA weights set");
+                        let req_init = build_request_init(
+                            tokens.clone(),
+                            req_params.clone(),
+                            client_req_id,
+                            is_run,
+                            &params,
+                            app_state,
+                            true,
+                        )?;
+                        let prompt_tokens = req_init.tokens.len();
+
+                        let (req_id, recv) = AsyncExecutor::lock().add_request(
+                            &req_init,
+                            req_input.prompt_params.clone(),
+                            llg.clone(),
+                        )?;
+
+                        let info = build_req_info(
+                            req_id,
+                            n_forks,
+                            client_req_id,
+                            cmpl_id.clone(),
+                            &prompt,
+                            prompt_tokens,
+                            params,
+                            &app_state.tok_env,
+                            is_chat,
+                            is_run,
+                            recv,
+                        )?;
+
+                        completions_stream_or_not(params.stream, info, None).await
+                    } else {
+                        Ok(AppError::from(anyhow!(
+                                "LoRA model {:?} was not in cache and load_lora_weights is set to never: {}", params.lora_model, err
+                            )).into_response())
+                    }
+                } else {
+                    Ok(err.into_response())
+                }
             }
         }
     }
@@ -987,9 +1173,10 @@ async fn completions_stream(
     Ok(Sse::new(response_stream))
 }
 
-async fn completions(mut client: ReqInfo) -> Result<Json<Value>, AppError> {
-    let mut token = client.cancel_token();
+async fn gather_response_chunks(mut client: ReqInfo) -> Result<(ReqInfo, Vec<TopTokenLogProb>, Option<Tensor>, Vec<u32>), Error> {
     let mut logprobs = vec![];
+    let mut logits = vec![];
+    let mut tokens = vec![];
     while let Some(mut result) = client.recv.recv().await {
         log::trace!("infer response: {:?}", result.response);
         let response = &result.response;
@@ -1001,16 +1188,47 @@ async fn completions(mut client: ReqInfo) -> Result<Json<Value>, AppError> {
         } else {
             client.usage.completion_tokens += response.tokens.len();
             client.usage.total_tokens += response.tokens.len();
+            log::debug!("tokens from gather: {:?}", response.tokens);
+            let response = result.response.clone(); // Clone the response to avoid borrowing conflicts
             let r = client.update_text(&mut result, false);
+            tokens.append(&mut response.tokens.clone());
             if let Some(mut lp) = r.logprobs {
                 logprobs.append(&mut lp.content);
             }
+            if let Some(ref l) = response.generation_logits {
+                if !l.size.is_empty() && !l.data.is_empty() {
+                    logits.push(Tensor::from(l.clone())); // TODO: Revisit if we ensure only one logit will ever be returned.
+                } else {
+                    log::debug!("no logits detected")
+                }
+            } else {
+                log::debug!("no logits detected")
+            }
+
         }
 
         if client.all_forks_stopped() {
             let _ = AsyncExecutor::lock().cancel_request(client.req_id);
             break;
         }
+    }
+
+    for (i, logit) in logits.iter().enumerate() {
+        log::debug!("Logit {} shape: {:?}", i, logit.size.iter().map(|&x| x as u32).collect::<Vec<u32>>());
+    }
+
+    let logits_tensor = logits.get(0).cloned();
+
+    Ok((client, logprobs, logits_tensor, tokens))
+}
+
+async fn completions(mut client: ReqInfo, final_content: Option<Vec<u8>>) -> Result<Json<Value>, AppError> {
+    let mut token = client.cancel_token();
+    let mut logprobs = vec![];
+
+    // TODO this should skip this if gather_response_chunks was called already
+    if final_content.is_none() {
+        (client, logprobs, _, _) = gather_response_chunks(client).await?;
     }
 
     let created = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
@@ -1035,7 +1253,7 @@ async fn completions(mut client: ReqInfo) -> Result<Json<Value>, AppError> {
                 index,
                 message: ChatCompletionMessage {
                     role: Role::Assistant,
-                    content: Some(String::from_utf8_lossy(&fork.text).to_string()),
+                    content: Some(String::from_utf8_lossy(&final_content.clone().unwrap_or(fork.text)).to_string()),
                 },
                 finish_reason: fork.stop_reason.map(map_finish_reason),
                 llg_logs: if fork.logs.is_empty() {

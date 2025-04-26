@@ -6,20 +6,6 @@ if [ -z "$LLGTRT_BIN" ] ; then
     LLGTRT_BIN=/usr/local/bin/llgtrt
 fi
 
-if [ -n "$1" ]; then
-    ENGINE=$1
-    shift
-else
-    echo "Error: Must provide an engine path"
-    exit 1
-fi
-
-# Optional second positional arg = DRAFT_ENGINE
-if [[ "$1" != "--"* && -n "$1" ]]; then
-    DRAFT_ENGINE=$1
-    shift
-fi
-
 if test -f "$ENGINE/rank0.engine" ; then
     :
 else
@@ -27,7 +13,6 @@ else
     exit 1
 fi
 
-# Determine TP size
 TP=1
 for n in $(seq 1 8) ; do
     if test -f "$ENGINE/rank$n.engine" ; then
@@ -41,10 +26,19 @@ cmd="$LLGTRT_BIN --engine $ENGINE"
 
 # assume draft model has single engine,
 # TODO assume fit single gpu check somehow?
-# Add draft engine if provided
-if [ -n "$DRAFT_ENGINE" ]; then
-    if test -f "$DRAFT_ENGINE/rank0.engine"; then
+if [ $DRAFT_ENGINE ]; then
+    if test -f "${DRAFT_ENGINE}/rank0.engine" ; then
+        #TP=$((n+1))  # TODO assuming single engine on single gpu
+        # TODO set from env var or pass in var easier
         cmd="$cmd --draft-engine $DRAFT_ENGINE"
+
+        if [ $N_DRAFT_TOKENS ]; then
+            cmd="$cmd --n-draft-tokens $N_DRAFT_TOKENS"
+        fi
+
+        if [ $ACC_RATE ]; then
+            cmd="$cmd --draft-token-acc-rate $ACC_RATE"
+        fi
     else
         echo "Error: $DRAFT_ENGINE/rank0.engine not found - doesn't look like draft engine directory"
         exit 1
@@ -56,7 +50,9 @@ if [ $TP -gt 1 ] ; then
     cmd="$MPI $cmd"
 fi
 
-cmd="$cmd ${@}"  # Append any additional params
+cmd="$cmd "$@""  # TODO this syntax isn't right
+export RUST_BACKTRACE=1
+export RUST_LOG=debug
 
 set -x
 echo $cmd

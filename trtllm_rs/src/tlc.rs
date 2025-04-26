@@ -30,6 +30,7 @@ pub struct ResponseChunk {
     pub tokens: Vec<TokenId>,
     pub logprobs: Option<Vec<Vec<(TokenId, f32)>>>,
     pub is_req_final: bool,
+    pub generation_logits: Option<Tensor>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -138,6 +139,14 @@ pub struct LoraParams {
     pub config: Option<Tensor>,
 }
 
+
+#[derive(Debug, Clone, Default)]
+pub struct DraftParams {
+    pub draft_tokens: Vec<u32>,
+    pub logits_tensor: Option<Tensor>,
+    pub acc_rate: Option<f32>,
+}
+
 #[derive(Debug, Clone)]
 pub struct RequestInit {
     pub tokens: Vec<TokenId>,
@@ -145,6 +154,7 @@ pub struct RequestInit {
     pub is_run: bool,
     pub params: RequestParams,
     pub lora_params: Option<LoraParams>,
+    pub draft_params: Option<DraftParams>  // logits, tokens, acceptance ratio
 }
 
 unsafe impl Send for ffi::TlcPromptParams {}
@@ -236,6 +246,27 @@ impl ffi::TlcShape {
         }
         r
     }
+
+    pub fn to_vec(&self) -> Vec<i64> {
+        self.dims[..self.num_dims].to_vec()
+    }
+}
+
+impl TlcDataType {
+    pub fn size_in_bytes(&self) -> usize {
+        match self {
+            TlcDataType::TLC_DT_F32 => 4,
+            TlcDataType::TLC_DT_F16 => 2,
+            TlcDataType::TLC_DT_I8  => 1,
+            TlcDataType::TLC_DT_I32 => 4,
+            TlcDataType::TLC_DT_BOOL => 1,
+            TlcDataType::TLC_DT_U8  => 1,
+            TlcDataType::TLC_DT_F8  => 1,
+            TlcDataType::TLC_DT_BF16 => 2,
+            TlcDataType::TLC_DT_I64 => 8,
+            TlcDataType::TLC_DT_I4  => 1,
+        }
+    }
 }
 
 impl Default for ffi::TlcTensor {
@@ -258,6 +289,17 @@ impl Default for ffi::TlcLoraParams {
     }
 }
 
+impl Default for ffi::TlcDraftParams {
+    fn default() -> Self {
+        ffi::TlcDraftParams {
+            draft_tokens: std::ptr::null_mut(),  // TODO default for raw pointer??
+            num_tokens: 0,
+            logits_tensor: ffi::TlcTensor::default(),
+            acc_rate: -1.0 // TODO make optional
+        }
+    }
+}
+
 impl Tensor {
     pub fn as_tlc_tensor(&self) -> ffi::TlcTensor {
         let tensor = self;
@@ -271,6 +313,22 @@ impl Tensor {
             shape: ffi_shape,
             data_ptr: void_data_ptr,
             data_type: tensor.dtype,
+        }
+    }
+
+    //TODO: Need to account for multiple datatypes
+    pub fn from_tlc_tensor(tlc_tensor: &ffi::TlcTensor) -> Self {
+        let shape = tlc_tensor.shape.to_vec();
+
+        let data_ptr = tlc_tensor.data_ptr as *const u8;
+        let num_elements: usize = i64::try_into(shape.iter().product::<i64>()).expect("all elements are positive so this should work");
+        let data: Vec<u8> = unsafe {
+            std::slice::from_raw_parts(data_ptr, num_elements).to_vec()
+        };
+        Tensor {
+            size: shape,
+            data,
+            dtype: tlc_tensor.data_type,
         }
     }
 }
@@ -318,6 +376,7 @@ impl Executor {
             client_req_id: init.client_req_id.0,
             lora_params: ffi::TlcLoraParams::default(),
             prompt_params: ffi::TlcPromptParams::default(),
+            draft_params: ffi::TlcDraftParams::default(),
         };
 
         if let Some(pp) = prompt_params {
@@ -337,6 +396,17 @@ impl Executor {
                 lp.config = config.as_tlc_tensor();
             }
             arg.lora_params = lp;
+        }
+
+        // Load draft params in request if we have any.
+        if let Some(draft_params) = &init.draft_params {
+            arg.draft_params = ffi::TlcDraftParams {
+                draft_tokens: draft_params.draft_tokens.as_ptr() as *mut i32,
+                num_tokens: draft_params.draft_tokens.len() as u32,
+                logits_tensor: draft_params.logits_tensor.as_ref().map_or_else(|| ffi::TlcTensor::default(),
+                                                                               |logits| logits.as_tlc_tensor()),
+                acc_rate: draft_params.acc_rate.unwrap_or(-1.0),
+            };
         }
 
         let mut req_id = 0;
@@ -437,6 +507,12 @@ impl Responder {
                         )
                     };
 
+                    let generation_logits = if resp.logits_tensor.data_ptr.is_null() {
+                        None
+                    } else {
+                        Some(Tensor::from_tlc_tensor(&resp.logits_tensor))
+                    };
+
                     ResponseChunk {
                         req_id: ReqId(resp.req_id),
                         sequence_idx: resp.sequence_idx,
@@ -454,6 +530,7 @@ impl Responder {
                         },
                         logprobs,
                         tokens,
+                        generation_logits
                     }
                 })
                 .collect())

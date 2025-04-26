@@ -1,7 +1,7 @@
 #!/bin/sh
 
 if [ -z "$PORT" ]; then
-    PORT=3000
+    PORT=3002
 fi
 
 if [ -z "$1" ]; then
@@ -33,13 +33,6 @@ fi
 
 set -e
 cd $(dirname $0)/..
-./docker/drun.sh \
-    --volume "$ENGINE":/engine \
-    ${lora_volume} \
-    --publish $PORT:$PORT \
-    llgtrt/llgtrt:latest \
-    /usr/local/bin/launch-llgtrt.sh \
-        /engine \
-        --port $PORT \
-        ${lora_arg} \
-        "$@"
+cd $(dirname $0)/..
+set -x
+docker run --ipc=host --runtime=nvidia --publish $PORT:$PORT --volume "$ENGINE":/engine --privileged --gpus=0 --shm-size=8g -d llgtrt/llgtrt:main /usr/local/bin/launch-llgtrt.sh /engine --port $PORT
